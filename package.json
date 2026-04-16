@@ -1,0 +1,34 @@
+{
+  "name": "xmlfeeds",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "worker": "node src/workers/clickWorker.js",
+    "scheduler": "node src/scheduler.js",
+    "feed": "node src/feed-scheduler.js",
+    "all": "concurrently \"npm run start\" \"npm run worker\" \"npm run scheduler\" \"npm run feed\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "axios": "^1.14.0",
+    "better-sqlite3": "^12.8.0",
+    "bull": "^4.16.5",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "fast-xml-parser": "^5.5.9",
+    "geoip-lite": "^1.4.10",
+    "ioredis": "^5.10.1",
+    "multer": "^2.1.1",
+    "node-cron": "^4.2.1",
+    "playwright": "^1.58.2"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

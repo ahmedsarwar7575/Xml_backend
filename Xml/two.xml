@@ -1,0 +1,20 @@
+<source>
+  <job>
+    <Job-Nr>2002</Job-Nr>
+    <TITLE>Delivery Driver – Own Vehicle Required</TITLE>
+    <DESCRIPTION>Deliver packages within Brooklyn. Must have valid license.</DESCRIPTION>
+    <URL>https://newyork.craigslist.org/brk/delivery</URL>
+    <CITY>Brooklyn</CITY>
+    <REGION>New York</REGION>
+    <POSTALCODE>11201</POSTALCODE>
+    <COUNTRY>USA</COUNTRY>
+    <COMPANY>FastShip Logistics</COMPANY>
+    <DATE>2026-04-10</DATE>
+    <JobType>Part-time</JobType>
+    <LOGO>https://craigslist.org/favicon.ico</LOGO>
+    <CATEGORY>Transport</CATEGORY>
+    <LAT>40.6782</LAT>
+    <LON>-73.9442</LON>
+    <CPC>1.25</CPC>
+  </job>
+</source>

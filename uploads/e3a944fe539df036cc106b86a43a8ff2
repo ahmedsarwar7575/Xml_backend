@@ -1,0 +1,362 @@
+<source>
+  <job>
+    <Job-Nr>1</Job-Nr>
+    <TITLE>Wikipedia Editor – Artificial Intelligence</TITLE>
+    <DESCRIPTION>Improve AI-related articles, verify citations, and add new content.</DESCRIPTION>
+    <URL>https://en.wikipedia.org/wiki/Artificial_intelligence</URL>
+    <CITY>San Francisco</CITY>
+    <REGION>California</REGION>
+    <POSTALCODE>94105</POSTALCODE>
+    <COUNTRY>USA</COUNTRY>
+    <COMPANY>Wikimedia Foundation</COMPANY>
+    <DATE>2026-04-05</DATE>
+    <JobType>Remote</JobType>
+    <LOGO>https://wikimedia.org/logo.png</LOGO>
+    <CATEGORY>Technology</CATEGORY>
+    <LAT>37.7749</LAT>
+    <LON>-122.4194</LON>
+    <CPC>2.50</CPC>
+  </job>
+  <job>
+    <Job-Nr>2</Job-Nr>
+    <TITLE>Data Scientist – Machine Learning</TITLE>
+    <DESCRIPTION>Analyze Wikipedia traffic data and build predictive models.</DESCRIPTION>
+    <URL>https://en.wikipedia.org/wiki/Machine_learning</URL>
+    <CITY>New York</CITY>
+    <REGION>New York</REGION>
+    <POSTALCODE>10001</POSTALCODE>
+    <COUNTRY>USA</COUNTRY>
+    <COMPANY>WikiData Labs</COMPANY>
+    <DATE>2026-04-10</DATE>
+    <JobType>Full-time</JobType>
+    <LOGO>https://wikidata.org/logo.png</LOGO>
+    <CATEGORY>Data Science</CATEGORY>
+    <LAT>40.7128</LAT>
+    <LON>-74.0060</LON>
+    <CPC>3.20</CPC>
+  </job>
+  <job>
+    <Job-Nr>3</Job-Nr>
+    <TITLE>Content Writer – Climate Change</TITLE>
+    <DESCRIPTION>Write and edit Wikipedia articles on climate science.</DESCRIPTION>
+    <URL>https://en.wikipedia.org/wiki/Climate_change</URL>
+    <CITY>London</CITY>
+    <REGION>England</REGION>
+    <POSTALCODE>WC1A 2LP</POSTALCODE>
+    <COUNTRY>UK</COUNTRY>
+    <COMPANY>Wikimedia UK</COMPANY>
+    <DATE>2026-04-15</DATE>
+    <JobType>Contract</JobType>
+    <LOGO>https://wikimedia.org.uk/logo.png</LOGO>
+    <CATEGORY>Writing</CATEGORY>
+    <LAT>51.5074</LAT>
+    <LON>-0.1278</LON>
+    <CPC>2.10</CPC>
+  </job>
+  <job>
+    <Job-Nr>4</Job-Nr>
+    <TITLE>Software Engineer – Open Source</TITLE>
+    <DESCRIPTION>Develop MediaWiki extensions and maintain backend services.</DESCRIPTION>
+    <URL>https://en.wikipedia.org/wiki/Open_source</URL>
+    <CITY>Austin</CITY>
+    <REGION>Texas</REGION>
+    <POSTALCODE>78701</POSTALCODE>
+    <COUNTRY>USA</COUNTRY>
+    <COMPANY>MediaWiki Solutions</COMPANY>
+    <DATE>2026-04-20</DATE>
+    <JobType>Full-time</JobType>
+    <LOGO>https://mediawiki.org/logo.png</LOGO>
+    <CATEGORY>Engineering</CATEGORY>
+    <LAT>30.2672</LAT>
+    <LON>-97.7431</LON>
+    <CPC>3.75</CPC>
+  </job>
+  <job>
+    <Job-Nr>5</Job-Nr>
+    <TITLE>UX Designer – Mobile App</TITLE>
+    <DESCRIPTION>Design responsive layouts for Wikipedia mobile apps.</DESCRIPTION>
+    <URL>https://en.wikipedia.org/wiki/User_experience_design</URL>
+    <CITY>Berlin</CITY>
+    <REGION>Berlin</REGION>
+    <POSTALCODE>10115</POSTALCODE>
+    <COUNTRY>Germany</COUNTRY>
+    <COMPANY>Wikimedia DE</COMPANY>
+    <DATE>2026-04-25</DATE>
+    <JobType>Remote</JobType>
+    <LOGO>https://wikimedia.de/logo.png</LOGO>
+    <CATEGORY>Design</CATEGORY>
+    <LAT>52.5200</LAT>
+    <LON>13.4050</LON>
+    <CPC>2.80</CPC>
+  </job>
+  <job>
+    <Job-Nr>6</Job-Nr>
+    <TITLE>SEO Specialist – Web Traffic</TITLE>
+    <DESCRIPTION>Optimize Wikipedia articles for search engines and improve visibility.</DESCRIPTION>
+    <URL>https://en.wikipedia.org/wiki/Search_engine_optimization</URL>
+    <CITY>Toronto</CITY>
+    <REGION>Ontario</REGION>
+    <POSTALCODE>M5V 1T1</POSTALCODE>
+    <COUNTRY>Canada</COUNTRY>
+    <COMPANY>WikiTraffic Inc.</COMPANY>
+    <DATE>2026-05-01</DATE>
+    <JobType>Part-time</JobType>
+    <LOGO>https://wikitraffic.com/logo.png</LOGO>
+    <CATEGORY>Marketing</CATEGORY>
+    <LAT>43.6532</LAT>
+    <LON>-79.3832</LON>
+    <CPC>1.95</CPC>
+  </job>
+  <job>
+    <Job-Nr>7</Job-Nr>
+    <TITLE>Blockchain Developer – Web3</TITLE>
+    <DESCRIPTION>Integrate Wikipedia data with blockchain oracles.</DESCRIPTION>
+    <URL>https://en.wikipedia.org/wiki/Blockchain</URL>
+    <CITY>Singapore</CITY>
+    <REGION>Singapore</REGION>
+    <POSTALCODE>018906</POSTALCODE>
+    <COUNTRY>Singapore</COUNTRY>
+    <COMPANY>WikiChain Labs</COMPANY>
+    <DATE>2026-05-05</DATE>
+    <JobType>Contract</JobType>
+    <LOGO>https://wikichain.io/logo.png</LOGO>
+    <CATEGORY>Cryptocurrency</CATEGORY>
+    <LAT>1.3521</LAT>
+    <LON>103.8198</LON>
+    <CPC>4.50</CPC>
+  </job>
+  <job>
+    <Job-Nr>8</Job-Nr>
+    <TITLE>Cybersecurity Analyst – Threat Detection</TITLE>
+    <DESCRIPTION>Protect Wikipedia infrastructure from cyber attacks.</DESCRIPTION>
+    <URL>https://en.wikipedia.org/wiki/Computer_security</URL>
+    <CITY>Washington D.C.</CITY>
+    <REGION>District of Columbia</REGION>
+    <POSTALCODE>20001</POSTALCODE>
+    <COUNTRY>USA</COUNTRY>
+    <COMPANY>WikiSecure</COMPANY>
+    <DATE>2026-05-10</DATE>
+    <JobType>Full-time</JobType>
+    <LOGO>https://wikisecure.com/logo.png</LOGO>
+    <CATEGORY>Security</CATEGORY>
+    <LAT>38.9072</LAT>
+    <LON>-77.0369</LON>
+    <CPC>3.30</CPC>
+  </job>
+  <job>
+    <Job-Nr>9</Job-Nr>
+    <TITLE>DevOps Engineer – Cloud Infrastructure</TITLE>
+    <DESCRIPTION>Manage Kubernetes clusters for Wikipedia's backend.</DESCRIPTION>
+    <URL>https://en.wikipedia.org/wiki/DevOps</URL>
+    <CITY>Seattle</CITY>
+    <REGION>Washington</REGION>
+    <POSTALCODE>98101</POSTALCODE>
+    <COUNTRY>USA</COUNTRY>
+    <COMPANY>CloudWiki Solutions</COMPANY>
+    <DATE>2026-05-15</DATE>
+    <JobType>Remote</JobType>
+    <LOGO>https://cloudwiki.com/logo.png</LOGO>
+    <CATEGORY>Infrastructure</CATEGORY>
+    <LAT>47.6062</LAT>
+    <LON>-122.3321</LON>
+    <CPC>3.60</CPC>
+  </job>
+  <job>
+    <Job-Nr>10</Job-Nr>
+    <TITLE>Medical Writer – Health Articles</TITLE>
+    <DESCRIPTION>Write and fact-check medical content on Wikipedia.</DESCRIPTION>
+    <URL>https://en.wikipedia.org/wiki/Medicine</URL>
+    <CITY>Boston</CITY>
+    <REGION>Massachusetts</REGION>
+    <POSTALCODE>02108</POSTALCODE>
+    <COUNTRY>USA</COUNTRY>
+    <COMPANY>WikiHealth</COMPANY>
+    <DATE>2026-05-20</DATE>
+    <JobType>Freelance</JobType>
+    <LOGO>https://wikihealth.org/logo.png</LOGO>
+    <CATEGORY>Healthcare</CATEGORY>
+    <LAT>42.3601</LAT>
+    <LON>-71.0589</LON>
+    <CPC>2.45</CPC>
+  </job>
+  <job>
+    <Job-Nr>11</Job-Nr>
+    <TITLE>Video Editor – Educational Content</TITLE>
+    <DESCRIPTION>Create tutorial videos for Wikipedia's educational portal.</DESCRIPTION>
+    <URL>https://en.wikipedia.org/wiki/Video_editing</URL>
+    <CITY>Los Angeles</CITY>
+    <REGION>California</REGION>
+    <POSTALCODE>90001</POSTALCODE>
+    <COUNTRY>USA</COUNTRY>
+    <COMPANY>WikiMedia Studios</COMPANY>
+    <DATE>2026-05-25</DATE>
+    <JobType>Part-time</JobType>
+    <LOGO>https://wikimedia-studios.com/logo.png</LOGO>
+    <CATEGORY>Media</CATEGORY>
+    <LAT>34.0522</LAT>
+    <LON>-118.2437</LON>
+    <CPC>1.85</CPC>
+  </job>
+  <job>
+    <Job-Nr>12</Job-Nr>
+    <TITLE>Community Manager – Social Media</TITLE>
+    <DESCRIPTION>Engage with Wikipedia contributors and organize events.</DESCRIPTION>
+    <URL>https://en.wikipedia.org/wiki/Community_management</URL>
+    <CITY>Chicago</CITY>
+    <REGION>Illinois</REGION>
+    <POSTALCODE>60601</POSTALCODE>
+    <COUNTRY>USA</COUNTRY>
+    <COMPANY>WikiCommunity</COMPANY>
+    <DATE>2026-06-01</DATE>
+    <JobType>Full-time</JobType>
+    <LOGO>https://wikicommunity.com/logo.png</LOGO>
+    <CATEGORY>Management</CATEGORY>
+    <LAT>41.8781</LAT>
+    <LON>-87.6298</LON>
+    <CPC>2.20</CPC>
+  </job>
+  <job>
+    <Job-Nr>13</Job-Nr>
+    <TITLE>Graphic Designer – Infographics</TITLE>
+    <DESCRIPTION>Create data visualizations for Wikipedia articles.</DESCRIPTION>
+    <URL>https://en.wikipedia.org/wiki/Graphic_design</URL>
+    <CITY>Portland</CITY>
+    <REGION>Oregon</REGION>
+    <POSTALCODE>97201</POSTALCODE>
+    <COUNTRY>USA</COUNTRY>
+    <COMPANY>WikiVisuals</COMPANY>
+    <DATE>2026-06-05</DATE>
+    <JobType>Contract</JobType>
+    <LOGO>https://wikivisuals.com/logo.png</LOGO>
+    <CATEGORY>Design</CATEGORY>
+    <LAT>45.5152</LAT>
+    <LON>-122.6784</LON>
+    <CPC>2.00</CPC>
+  </job>
+  <job>
+    <Job-Nr>14</Job-Nr>
+    <TITLE>Translator – Spanish to English</TITLE>
+    <DESCRIPTION>Translate Wikipedia articles from Spanish to English.</DESCRIPTION>
+    <URL>https://en.wikipedia.org/wiki/Translation</URL>
+    <CITY>Miami</CITY>
+    <REGION>Florida</REGION>
+    <POSTALCODE>33101</POSTALCODE>
+    <COUNTRY>USA</COUNTRY>
+    <COMPANY>WikiTranslate</COMPANY>
+    <DATE>2026-06-10</DATE>
+    <JobType>Freelance</JobType>
+    <LOGO>https://wikitranslate.com/logo.png</LOGO>
+    <CATEGORY>Translation</CATEGORY>
+    <LAT>25.7617</LAT>
+    <LON>-80.1918</LON>
+    <CPC>1.75</CPC>
+  </job>
+  <job>
+    <Job-Nr>15</Job-Nr>
+    <TITLE>Legal Advisor – Copyright</TITLE>
+    <DESCRIPTION>Handle copyright claims and legal issues for Wikipedia.</DESCRIPTION>
+    <URL>https://en.wikipedia.org/wiki/Copyright</URL>
+    <CITY>San Diego</CITY>
+    <REGION>California</REGION>
+    <POSTALCODE>92101</POSTALCODE>
+    <COUNTRY>USA</COUNTRY>
+    <COMPANY>WikiLegal</COMPANY>
+    <DATE>2026-06-15</DATE>
+    <JobType>Part-time</JobType>
+    <LOGO>https://wikilegal.com/logo.png</LOGO>
+    <CATEGORY>Legal</CATEGORY>
+    <LAT>32.7157</LAT>
+    <LON>-117.1611</LON>
+    <CPC>3.00</CPC>
+  </job>
+  <job>
+    <Job-Nr>16</Job-Nr>
+    <TITLE>Data Engineer – Big Data</TITLE>
+    <DESCRIPTION>Build ETL pipelines for Wikipedia pageview data.</DESCRIPTION>
+    <URL>https://en.wikipedia.org/wiki/Big_data</URL>
+    <CITY>Denver</CITY>
+    <REGION>Colorado</REGION>
+    <POSTALCODE>80201</POSTALCODE>
+    <COUNTRY>USA</COUNTRY>
+    <COMPANY>WikiData Engineering</COMPANY>
+    <DATE>2026-06-20</DATE>
+    <JobType>Remote</JobType>
+    <LOGO>https://wikidataeng.com/logo.png</LOGO>
+    <CATEGORY>Engineering</CATEGORY>
+    <LAT>39.7392</LAT>
+    <LON>-104.9903</LON>
+    <CPC>3.40</CPC>
+  </job>
+  <job>
+    <Job-Nr>17</Job-Nr>
+    <TITLE>Mobile Developer – iOS/Android</TITLE>
+    <DESCRIPTION>Develop Wikipedia's official mobile applications.</DESCRIPTION>
+    <URL>https://en.wikipedia.org/wiki/Mobile_app_development</URL>
+    <CITY>San Jose</CITY>
+    <REGION>California</REGION>
+    <POSTALCODE>95101</POSTALCODE>
+    <COUNTRY>USA</COUNTRY>
+    <COMPANY>WikiMobile</COMPANY>
+    <DATE>2026-06-25</DATE>
+    <JobType>Full-time</JobType>
+    <LOGO>https://wikimobile.com/logo.png</LOGO>
+    <CATEGORY>Mobile</CATEGORY>
+    <LAT>37.3382</LAT>
+    <LON>-121.8863</LON>
+    <CPC>3.90</CPC>
+  </job>
+  <job>
+    <Job-Nr>18</Job-Nr>
+    <TITLE>Historian – Research & Writing</TITLE>
+    <DESCRIPTION>Write and source historical articles for Wikipedia.</DESCRIPTION>
+    <URL>https://en.wikipedia.org/wiki/History</URL>
+    <CITY>Philadelphia</CITY>
+    <REGION>Pennsylvania</REGION>
+    <POSTALCODE>19101</POSTALCODE>
+    <COUNTRY>USA</COUNTRY>
+    <COMPANY>WikiHistory Project</COMPANY>
+    <DATE>2026-07-01</DATE>
+    <JobType>Contract</JobType>
+    <LOGO>https://wikihistory.com/logo.png</LOGO>
+    <CATEGORY>Research</CATEGORY>
+    <LAT>39.9526</LAT>
+    <LON>-75.1652</LON>
+    <CPC>2.15</CPC>
+  </job>
+  <job>
+    <Job-Nr>19</Job-Nr>
+    <TITLE>AI Ethics Researcher</TITLE>
+    <DESCRIPTION>Study ethical implications of AI on Wikipedia content.</DESCRIPTION>
+    <URL>https://en.wikipedia.org/wiki/AI_ethics</URL>
+    <CITY>Cambridge</CITY>
+    <REGION>Massachusetts</REGION>
+    <POSTALCODE>02138</POSTALCODE>
+    <COUNTRY>USA</COUNTRY>
+    <COMPANY>WikiEthics Lab</COMPANY>
+    <DATE>2026-07-05</DATE>
+    <JobType>Full-time</JobType>
+    <LOGO>https://wikiethics.org/logo.png</LOGO>
+    <CATEGORY>Research</CATEGORY>
+    <LAT>42.3736</LAT>
+    <LON>-71.1097</LON>
+    <CPC>3.10</CPC>
+  </job>
+  <job>
+    <Job-Nr>20</Job-Nr>
+    <TITLE>Database Administrator – SQL</TITLE>
+    <DESCRIPTION>Maintain Wikipedia's large‑scale MySQL databases.</DESCRIPTION>
+    <URL>https://en.wikipedia.org/wiki/Database_administration</URL>
+    <CITY>Dallas</CITY>
+    <REGION>Texas</REGION>
+    <POSTALCODE>75201</POSTALCODE>
+    <COUNTRY>USA</COUNTRY>
+    <COMPANY>WikiDB Solutions</COMPANY>
+    <DATE>2026-07-10</DATE>
+    <JobType>Full-time</JobType>
+    <LOGO>https://wikidb.com/logo.png</LOGO>
+    <CATEGORY>IT</CATEGORY>
+    <LAT>32.7767</LAT>
+    <LON>-96.7970</LON>
+    <CPC>3.25</CPC>
+  </job>
+</source>

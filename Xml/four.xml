@@ -1,0 +1,20 @@
+<source>
+  <job>
+    <Job-Nr>4004</Job-Nr>
+    <TITLE>Retail Sales Associate</TITLE>
+    <DESCRIPTION>Customer service, cash handling, stocking shelves.</DESCRIPTION>
+    <URL>https://toronto.craigslist.ca/retail</URL>
+    <CITY>Toronto</CITY>
+    <REGION>Ontario</REGION>
+    <POSTALCODE>M5V 1T1</POSTALCODE>
+    <COUNTRY>Canada</COUNTRY>
+    <COMPANY>Maple Mart</COMPANY>
+    <DATE>2026-04-05</DATE>
+    <JobType>Full-time</JobType>
+    <LOGO>https://maplemart.ca/logo.png</LOGO>
+    <CATEGORY>Retail</CATEGORY>
+    <LAT>43.6532</LAT>
+    <LON>-79.3832</LON>
+    <CPC>0.90</CPC>
+  </job>
+</source>

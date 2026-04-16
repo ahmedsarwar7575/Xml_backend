@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<data>
+  <class name="ProjectA.ClassA1">
+    <sourcefile name="C:\Users\TestApp\ProjectA\ClassA1.cs"/>
+    <coverage hits="8" total="8" type="method"/>
+    <coverage hits="30" total="30" type="line"/>
+    <method inv="2" name="ClassA1  : ()V">
+      <coverage hits="3" lines="11:2,12:2,14:2" total="3" type="line"/>
+    </method>
+    <method inv="2" name="BoolByteMethod  : (LSystem/Boolean;LSystem/SByte;)V">
+      <coverage hits="3" lines="17:2,18:2,19:2" total="3" type="line"/>
+    </method>
+    <method inv="1" name="CharStringMethod  : (LSystem/Char;LSystem/String;)V">
+      <coverage hits="3" lines="38:1,39:1,40:1" total="3" type="line"/>
+    </method>
+    <method inv="2" name="DateMethod  : (LSystem/DateTime;)V">
+      <coverage hits="3" lines="22:2,23:2,24:2" total="3" type="line"/>
+    </method>
+    <method inv="1" name="DecimalMethod  : (LSystem/Decimal;LSystem/Single;LSystem/Double;)V">
+      <coverage hits="4" lines="27:1,28:1,29:1,30:1" total="4" type="line"/>
+    </method>
+    <method inv="1" name="IntMethod  : (LSystem/Int32;LSystem/Int64;LSystem/Int16;)V">
+      <coverage hits="3" lines="33:1,34:1,35:1" total="3" type="line"/>
+    </method>
+    <method inv="1" name="passMeArrays  : (LSystem/Int32[];LSystem/Decimal[];)V">
+      <coverage hits="6" lines="51:1,52:1,53:1,55:1,56:1,58:1" total="6" type="line"/>
+    </method>
+    <method inv="1" name="passMeObjects  : (LSystem/Object;LSystem/Object/ClassA1;)V">
+      <coverage hits="5" lines="43:1,44:1,45:1,46:1,48:1" total="5" type="line"/>
+    </method>
+  </class>
+  <class name="TestApp.Form1">
+    <sourcefile name="C:\Users\TestApp\Form1.Designer.cs"/>
+    <coverage hits="2" total="10" type="method"/>
+    <coverage hits="24" total="110" type="line"/>
+    <method inv="1" name="btnClassA_Click  : (LSystem/Object;LSystem/Object/EventArgs;)V">
+      <coverage hits="3" lines="25:1,26:1,27:1" total="3" type="line"/>
+    </method>
+    <method inv="1" name="CallAllClassAMethods  : ()V">
+      <coverage hits="21" lines="35:1,36:1,37:1,38:1,39:1,40:1,41:1,42:1,43:1,44:1,45:1,46:1,48:1,49:1,50:1,51:1,52:1,53:1,54:1,55:1,56:1" total="21" type="line"/>
+    </method>
+  </class>
+</data>

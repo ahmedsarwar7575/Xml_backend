@@ -1,0 +1,20 @@
+<source>
+  <job>
+    <Job-Nr>1010</Job-Nr>
+    <TITLE>Junior Graphic Designer – Adobe Suite</TITLE>
+    <DESCRIPTION>Create social media assets, logos, and print materials.</DESCRIPTION>
+    <URL>https://indeed.com/viewjob?id=1010</URL>
+    <CITY>Seattle</CITY>
+    <REGION>Washington</REGION>
+    <POSTALCODE>98101</POSTALCODE>
+    <COUNTRY>USA</COUNTRY>
+    <COMPANY>Creative Studio Co.</COMPANY>
+    <DATE>2026-04-22</DATE>
+    <JobType>Internship</JobType>
+    <LOGO>https://creativestudio.com/logo.png</LOGO>
+    <CATEGORY>Design</CATEGORY>
+    <LAT>47.6062</LAT>
+    <LON>-122.3321</LON>
+    <CPC>1.95</CPC>
+  </job>
+</source>

@@ -1,0 +1,20 @@
+<source>
+  <job>
+    <Job-Nr>6006</Job-Nr>
+    <TITLE>Developer Advocate – API Documentation</TITLE>
+    <DESCRIPTION>Create tutorials, speak at conferences, improve developer experience.</DESCRIPTION>
+    <URL>https://stackoverflow.co/jobs/devrel</URL>
+    <CITY>New York</CITY>
+    <REGION>NY</REGION>
+    <POSTALCODE>10001</POSTALCODE>
+    <COUNTRY>USA</COUNTRY>
+    <COMPANY>Stack Overflow</COMPANY>
+    <DATE>2026-04-25</DATE>
+    <JobType>Remote</JobType>
+    <LOGO>https://cdn.sstatic.net/Sites/stackoverflow/logo.png</LOGO>
+    <CATEGORY>Developer Relations</CATEGORY>
+    <LAT>40.7128</LAT>
+    <LON>-74.0060</LON>
+    <CPC>4.00</CPC>
+  </job>
+</source>

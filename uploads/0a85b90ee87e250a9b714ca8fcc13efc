@@ -1,0 +1,20 @@
+<source>
+  <job>
+    <Job-Nr>7007</Job-Nr>
+    <TITLE>Handyman – Small repairs, painting, drywall</TITLE>
+    <DESCRIPTION>Experience with tools required. Flexible hours.</DESCRIPTION>
+    <URL>https://chicago.craigslist.org/handy</URL>
+    <CITY>Chicago</CITY>
+    <REGION>Illinois</REGION>
+    <POSTALCODE>60601</POSTALCODE>
+    <COUNTRY>USA</COUNTRY>
+    <COMPANY>FixIt Fast</COMPANY>
+    <DATE>2026-04-12</DATE>
+    <JobType>Part-time</JobType>
+    <LOGO>https://fixitfast.com/logo.png</LOGO>
+    <CATEGORY>Maintenance</CATEGORY>
+    <LAT>41.8781</LAT>
+    <LON>-87.6298</LON>
+    <CPC>1.50</CPC>
+  </job>
+</source>

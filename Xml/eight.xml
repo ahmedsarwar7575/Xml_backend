@@ -1,0 +1,20 @@
+<source>
+  <job>
+    <Job-Nr>8008</Job-Nr>
+    <TITLE>German–English Translator</TITLE>
+    <DESCRIPTION>Translate Wikipedia articles from English to German.</DESCRIPTION>
+    <URL>https://wikimedia.de/jobs/translator</URL>
+    <CITY>Berlin</CITY>
+    <REGION>Berlin</REGION>
+    <POSTALCODE>10115</POSTALCODE>
+    <COUNTRY>Germany</COUNTRY>
+    <COMPANY>Wikimedia DE</COMPANY>
+    <DATE>2026-05-10</DATE>
+    <JobType>Freelance</JobType>
+    <LOGO>https://wikimedia.de/logo.png</LOGO>
+    <CATEGORY>Translation</CATEGORY>
+    <LAT>52.5200</LAT>
+    <LON>13.4050</LON>
+    <CPC>2.30</CPC>
+  </job>
+</source>

@@ -1,0 +1,20 @@
+<source>
+  <job>
+    <Job-Nr>5005</Job-Nr>
+    <TITLE>Technical Content Writer</TITLE>
+    <DESCRIPTION>Write and edit Wikipedia articles, ensure factual accuracy.</DESCRIPTION>
+    <URL>https://wikimedia.org.uk/jobs/writer</URL>
+    <CITY>London</CITY>
+    <REGION>England</REGION>
+    <POSTALCODE>WC1A 2LP</POSTALCODE>
+    <COUNTRY>UK</COUNTRY>
+    <COMPANY>Wikimedia UK</COMPANY>
+    <DATE>2026-05-01</DATE>
+    <JobType>Contract</JobType>
+    <LOGO>https://wikimedia.org.uk/logo.png</LOGO>
+    <CATEGORY>Writing</CATEGORY>
+    <LAT>51.5074</LAT>
+    <LON>-0.1278</LON>
+    <CPC>2.10</CPC>
+  </job>
+</source>

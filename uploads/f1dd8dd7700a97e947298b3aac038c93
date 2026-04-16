@@ -1,0 +1,20 @@
+<source>
+  <job>
+    <Job-Nr>3003</Job-Nr>
+    <TITLE>Senior Software Engineer – Backend</TITLE>
+    <DESCRIPTION>Build scalable microservices using Node.js and PostgreSQL.</DESCRIPTION>
+    <URL>https://indeed.com/apply/3003</URL>
+    <CITY>Austin</CITY>
+    <REGION>Texas</REGION>
+    <POSTALCODE>78701</POSTALCODE>
+    <COUNTRY>USA</COUNTRY>
+    <COMPANY>TechCorp Inc.</COMPANY>
+    <DATE>2026-04-20</DATE>
+    <JobType>Remote</JobType>
+    <LOGO>https://techcorp.com/logo.svg</LOGO>
+    <CATEGORY>Engineering</CATEGORY>
+    <LAT>30.2672</LAT>
+    <LON>-97.7431</LON>
+    <CPC>3.75</CPC>
+  </job>
+</source>

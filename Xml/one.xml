@@ -1,0 +1,20 @@
+<source>
+  <job>
+    <Job-Nr>1001</Job-Nr>
+    <TITLE>Data Analyst</TITLE>
+    <DESCRIPTION>Analyze Wikipedia traffic data and optimize page performance.</DESCRIPTION>
+    <URL>https://wikimedia.org/careers/data-analyst</URL>
+    <CITY>San Francisco</CITY>
+    <REGION>California</REGION>
+    <POSTALCODE>94105</POSTALCODE>
+    <COUNTRY>USA</COUNTRY>
+    <COMPANY>Wikimedia Foundation</COMPANY>
+    <DATE>2026-04-15</DATE>
+    <JobType>Full-time</JobType>
+    <LOGO>https://wikimedia.org/logo.png</LOGO>
+    <CATEGORY>Data Science</CATEGORY>
+    <LAT>37.7749</LAT>
+    <LON>-122.4194</LON>
+    <CPC>2.50</CPC>
+  </job>
+</source>
