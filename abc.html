@@ -1,0 +1,876 @@
+<div id="v2v-marketplace-app">
+    <div class="mp-loading">Loading application...</div>
+    <div class="mp-error" hidden></div>
+  
+    <div class="mp-page" hidden>
+      <section class="mp-hero">
+        <div class="mp-hero__inner">
+          <div class="mp-badge" id="mp-status-badge">Verified Issuer</div>
+  
+          <div class="mp-hero__grid">
+            <div class="mp-hero__content">
+              <h1 id="mp-title">Application Overview</h1>
+              <p id="mp-subtitle">Loading summary...</p>
+            </div>
+  
+            <div class="mp-hero__aside">
+              <div class="mp-ask" id="mp-capital">$0</div>
+              <div class="mp-pill" id="mp-hero-meta">Status | Confidence</div>
+            </div>
+          </div>
+        </div>
+      </section>
+  
+      <section class="mp-layout">
+        <div class="mp-left">
+          <div class="mp-card">
+            <h2>Business Snapshot</h2>
+  
+            <div class="mp-snapshot-grid">
+              <div class="mp-info-block">
+                <span class="mp-label">Revenue</span>
+                <strong id="mp-revenue">—</strong>
+              </div>
+  
+              <div class="mp-info-block">
+                <span class="mp-label">Stage</span>
+                <strong id="mp-stage">—</strong>
+              </div>
+  
+              <div class="mp-info-block">
+                <span class="mp-label">Team</span>
+                <strong id="mp-team">—</strong>
+              </div>
+  
+              <div class="mp-info-block">
+                <span class="mp-label">Monetization</span>
+                <strong id="mp-monetization">—</strong>
+              </div>
+  
+              <div class="mp-info-block">
+                <span class="mp-label">Use of Funds</span>
+                <strong id="mp-use-of-funds">—</strong>
+              </div>
+  
+              <div class="mp-info-block">
+                <span class="mp-label">Industry</span>
+                <strong id="mp-industry">—</strong>
+              </div>
+            </div>
+          </div>
+  
+          <div class="mp-card">
+            <h2>Execution Experience</h2>
+  
+            <div class="mp-stat-list">
+              <div class="mp-stat-row">
+                <span>Industry Experience</span>
+                <strong id="mp-industry-experience">—</strong>
+              </div>
+  
+              <div class="mp-stat-row">
+                <span>Revenue Growth Over Last 3 Months</span>
+                <strong id="mp-revenue-growth">—</strong>
+              </div>
+  
+              <div class="mp-stat-row">
+                <span>Current Time Commitment</span>
+                <strong id="mp-time-commitment">—</strong>
+              </div>
+  
+              <div class="mp-stat-row">
+                <span>Paying Customers</span>
+                <strong id="mp-paying-customers">—</strong>
+              </div>
+  
+              <div class="mp-stat-row no-border">
+                <span>Personal Capital Invested</span>
+                <strong class="mp-highlight" id="mp-capital-invested">—</strong>
+              </div>
+            </div>
+          </div>
+  
+          <div class="mp-section-title">Detailed Intelligence</div>
+  
+          <div class="mp-card mp-qa-card">
+            <h3>Who is their target customer?</h3>
+            <p id="mp-target-customer">—</p>
+          </div>
+  
+          <div class="mp-card mp-qa-card">
+            <h3>What problem are they solving?</h3>
+            <p id="mp-problem-solving">—</p>
+          </div>
+  
+          <div class="mp-card">
+            <h3>The Solution Offering</h3>
+            <div class="mp-solution-copy" id="mp-solution-offering">
+              <p>—</p>
+            </div>
+          </div>
+        </div>
+  
+        <aside class="mp-right">
+          <div class="mp-card mp-founder-card">
+            <h2>Founder’s Info</h2>
+  
+            <div class="mp-founder-top">
+              <div>
+                <div class="mp-founder-name" id="mp-founder-name">—</div>
+                <div class="mp-founder-role" id="mp-founder-role">Founder</div>
+              </div>
+  
+              <div class="mp-contact-list">
+                <div class="mp-contact-line">
+                  <span>✉</span>
+                  <span id="mp-founder-email">—</span>
+                </div>
+                <div class="mp-contact-line">
+                  <span>☎</span>
+                  <span id="mp-founder-phone">—</span>
+                </div>
+              </div>
+            </div>
+  
+            <div class="mp-service-box">
+              <div class="mp-service-title">⚑ Military Service</div>
+  
+              <div class="mp-service-bottom">
+                <div class="mp-branch-wrap">
+                  <div class="mp-branch" id="mp-branch">—</div>
+                  <div class="mp-years" id="mp-years-served">—</div>
+                </div>
+  
+                <div class="mp-divider"></div>
+  
+                <div class="mp-service-tags">
+                  <span class="mp-tag mp-tag--neutral" id="mp-vosb">—</span>
+                  <span class="mp-tag mp-tag--green" id="mp-discharge">—</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </section>
+    </div>
+  </div>
+  
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Darker+Grotesque:wght@700;800&display=swap');
+  
+    #v2v-marketplace-app {
+      --bg: #fbfbfb;
+      --card: #ffffff;
+      --text: #191c1f;
+      --muted: #6b7280;
+      --soft-muted: #757682;
+      --line: #e5e7eb;
+      --shadow: 0 20px 40px rgba(90, 1, 1, 0.04);
+      --hero-image: none; /* replace with url('YOUR-IMAGE.jpg') if needed */
+  
+      font-family: 'Manrope', sans-serif;
+      color: var(--text);
+    }
+  
+    #v2v-marketplace-app * {
+      box-sizing: border-box;
+    }
+  
+    #v2v-marketplace-app .mp-loading,
+    #v2v-marketplace-app .mp-error {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 48px 32px;
+      background: var(--bg);
+      border-radius: 8px;
+      font-size: 15px;
+    }
+  
+    #v2v-marketplace-app .mp-error {
+      color: #b91c1c;
+      background: #fff1f2;
+      border: 1px solid #fecdd3;
+    }
+  
+    #v2v-marketplace-app .mp-page {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 96px 32px 32px;
+      background: var(--bg);
+    }
+  
+    #v2v-marketplace-app .mp-hero {
+      position: relative;
+      overflow: hidden;
+      min-height: 192px;
+      padding: 24px;
+      border-radius: 6px;
+      background-image:
+        linear-gradient(0deg, rgba(0, 0, 0, 0.90), rgba(0, 0, 0, 0.90)),
+        var(--hero-image);
+      background-size: cover;
+      background-position: center;
+      background-color: #060708;
+      isolation: isolate;
+    }
+  
+    #v2v-marketplace-app .mp-hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      opacity: 0.18;
+      background:
+        radial-gradient(circle at 20% 30%, rgba(255,255,255,.10), transparent 30%),
+        repeating-linear-gradient(115deg, rgba(255,255,255,.10) 0 2px, transparent 2px 34px),
+        linear-gradient(90deg, rgba(255,255,255,.06), transparent 28%);
+      pointer-events: none;
+      z-index: 0;
+    }
+  
+    #v2v-marketplace-app .mp-hero__inner {
+      position: relative;
+      z-index: 1;
+    }
+  
+    #v2v-marketplace-app .mp-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 2px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.15);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 18px;
+    }
+  
+    #v2v-marketplace-app .mp-badge::before {
+      content: "✪";
+      font-size: 12px;
+    }
+  
+    #v2v-marketplace-app .mp-hero__grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 240px;
+      gap: 16px;
+      align-items: start;
+    }
+  
+    #v2v-marketplace-app #mp-title {
+      margin: 0 0 8px;
+      font-family: 'Darker Grotesque', sans-serif;
+      font-size: 48px;
+      line-height: 1;
+      font-weight: 800;
+      letter-spacing: -1.2px;
+      color: #fff;
+    }
+  
+    #v2v-marketplace-app #mp-subtitle {
+      margin: 0;
+      color: #f7f9fd;
+      font-size: 14px;
+      line-height: 1.65;
+      max-width: 100%;
+    }
+  
+    #v2v-marketplace-app .mp-hero__aside {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 16px;
+    }
+  
+    #v2v-marketplace-app .mp-ask {
+      color: #fff;
+      font-size: 24px;
+      line-height: 32px;
+      font-weight: 600;
+      text-align: right;
+      word-break: break-word;
+    }
+  
+    #v2v-marketplace-app .mp-pill {
+      display: inline-flex;
+      justify-content: flex-end;
+      align-items: center;
+      max-width: 100%;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: #e6e8ec;
+      color: #444651;
+      font-size: 11px;
+      line-height: 1.4;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      text-align: right;
+    }
+  
+    #v2v-marketplace-app .mp-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.95fr) minmax(320px, 1fr);
+      gap: 16px;
+      margin-top: 24px;
+      align-items: start;
+    }
+  
+    #v2v-marketplace-app .mp-left {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+  
+    #v2v-marketplace-app .mp-right {
+      position: sticky;
+      top: 24px;
+    }
+  
+    #v2v-marketplace-app .mp-card {
+      background: var(--card);
+      border-radius: 4px;
+      box-shadow: var(--shadow);
+      padding: 32px 24px;
+    }
+  
+    #v2v-marketplace-app .mp-card h2,
+    #v2v-marketplace-app .mp-section-title {
+      margin: 0 0 22px;
+      font-family: 'Darker Grotesque', sans-serif;
+      font-size: 24px;
+      line-height: 1.2;
+      font-weight: 700;
+      letter-spacing: 0.6px;
+      color: var(--text);
+    }
+  
+    #v2v-marketplace-app .mp-card h3 {
+      margin: 0 0 10px;
+      font-size: 16px;
+      line-height: 22px;
+      font-weight: 600;
+      color: #000;
+    }
+  
+    #v2v-marketplace-app .mp-snapshot-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 28px 20px;
+    }
+  
+    #v2v-marketplace-app .mp-info-block {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+  
+    #v2v-marketplace-app .mp-label {
+      font-size: 14px;
+      line-height: 19px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: var(--soft-muted);
+    }
+  
+    #v2v-marketplace-app .mp-info-block strong {
+      font-size: 18px;
+      line-height: 25px;
+      font-weight: 500;
+      color: #000;
+    }
+  
+    #v2v-marketplace-app .mp-stat-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+  
+    #v2v-marketplace-app .mp-stat-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 0 0 16px;
+      margin-bottom: 20px;
+      border-bottom: 1px solid #e0e2e6;
+    }
+  
+    #v2v-marketplace-app .mp-stat-row.no-border {
+      border-bottom: 0;
+      margin-bottom: 0;
+      padding-bottom: 0;
+    }
+  
+    #v2v-marketplace-app .mp-stat-row span {
+      color: var(--soft-muted);
+      font-size: 14px;
+      line-height: 19px;
+      font-weight: 600;
+    }
+  
+    #v2v-marketplace-app .mp-stat-row strong {
+      color: #000;
+      font-size: 14px;
+      line-height: 20px;
+      font-weight: 700;
+      text-align: right;
+    }
+  
+    #v2v-marketplace-app .mp-stat-row .mp-highlight {
+      color: #735c00;
+    }
+  
+    #v2v-marketplace-app .mp-qa-card {
+      padding-top: 24px;
+      padding-bottom: 24px;
+    }
+  
+    #v2v-marketplace-app .mp-qa-card p,
+    #v2v-marketplace-app .mp-solution-copy p {
+      margin: 0;
+      font-size: 14px;
+      line-height: 20px;
+      color: #444651;
+    }
+  
+    #v2v-marketplace-app .mp-solution-copy {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+  
+    #v2v-marketplace-app .mp-founder-card {
+      padding: 24px;
+    }
+  
+    #v2v-marketplace-app .mp-founder-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+  
+    #v2v-marketplace-app .mp-founder-name {
+      font-size: 16px;
+      line-height: 22px;
+      font-weight: 700;
+      color: #000;
+    }
+  
+    #v2v-marketplace-app .mp-founder-role {
+      font-size: 14px;
+      line-height: 16px;
+      color: #444651;
+      margin-top: 2px;
+    }
+  
+    #v2v-marketplace-app .mp-contact-list {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+    }
+  
+    #v2v-marketplace-app .mp-contact-line {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: #444651;
+      font-size: 14px;
+      line-height: 16px;
+      text-align: right;
+      word-break: break-word;
+    }
+  
+    #v2v-marketplace-app .mp-service-box {
+      background: #eceef2;
+      border-radius: 8px;
+      padding: 16px;
+    }
+  
+    #v2v-marketplace-app .mp-service-title {
+      font-size: 16px;
+      line-height: 1;
+      font-weight: 600;
+      color: #000;
+      margin-bottom: 12px;
+    }
+  
+    #v2v-marketplace-app .mp-service-bottom {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+  
+    #v2v-marketplace-app .mp-branch-wrap {
+      min-width: 90px;
+    }
+  
+    #v2v-marketplace-app .mp-branch {
+      font-size: 16px;
+      line-height: 22px;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: #000;
+    }
+  
+    #v2v-marketplace-app .mp-years {
+      font-size: 12px;
+      line-height: 16px;
+      color: #444651;
+    }
+  
+    #v2v-marketplace-app .mp-divider {
+      width: 1px;
+      height: 32px;
+      background: #e2e8f0;
+    }
+  
+    #v2v-marketplace-app .mp-service-tags {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+  
+    #v2v-marketplace-app .mp-tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 8px;
+      min-height: 27px;
+      border-radius: 4px;
+      font-size: 14px;
+      line-height: 19px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+  
+    #v2v-marketplace-app .mp-tag--neutral {
+      background: #f1f5f9;
+      color: #334155;
+    }
+  
+    #v2v-marketplace-app .mp-tag--green {
+      background: #dcfce7;
+      color: #15803d;
+    }
+  
+    @media (max-width: 1100px) {
+      #v2v-marketplace-app .mp-layout {
+        grid-template-columns: 1fr;
+      }
+  
+      #v2v-marketplace-app .mp-right {
+        position: static;
+      }
+  
+      #v2v-marketplace-app .mp-hero__grid {
+        grid-template-columns: 1fr;
+      }
+  
+      #v2v-marketplace-app .mp-hero__aside {
+        align-items: flex-start;
+      }
+  
+      #v2v-marketplace-app .mp-pill,
+      #v2v-marketplace-app .mp-ask {
+        text-align: left;
+      }
+    }
+  
+    @media (max-width: 768px) {
+      #v2v-marketplace-app .mp-page {
+        padding: 32px 16px 24px;
+      }
+  
+      #v2v-marketplace-app .mp-snapshot-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+  
+      #v2v-marketplace-app #mp-title {
+        font-size: 34px;
+      }
+  
+      #v2v-marketplace-app .mp-founder-top,
+      #v2v-marketplace-app .mp-stat-row {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+  
+      #v2v-marketplace-app .mp-contact-list {
+        align-items: flex-start;
+      }
+  
+      #v2v-marketplace-app .mp-stat-row strong {
+        text-align: left;
+      }
+    }
+  
+    @media (max-width: 540px) {
+      #v2v-marketplace-app .mp-snapshot-grid {
+        grid-template-columns: 1fr;
+      }
+  
+      #v2v-marketplace-app .mp-card,
+      #v2v-marketplace-app .mp-founder-card {
+        padding: 22px 16px;
+      }
+  
+      #v2v-marketplace-app .mp-hero {
+        padding: 20px 16px;
+      }
+  
+      #v2v-marketplace-app #mp-title {
+        font-size: 30px;
+      }
+    }
+  </style>
+  
+  <script>
+    (function () {
+      const API_BASE = 'https://gohighlevel-fqb5.onrender.com/api/applications/';
+      const root = document.getElementById('v2v-marketplace-app');
+  
+      if (!root) return;
+  
+      const loadingEl = root.querySelector('.mp-loading');
+      const errorEl = root.querySelector('.mp-error');
+      const pageEl = root.querySelector('.mp-page');
+  
+      function hasOwn(obj, key) {
+        return Object.prototype.hasOwnProperty.call(obj || {}, key);
+      }
+  
+      function firstNonEmpty(...values) {
+        for (const value of values) {
+          if (Array.isArray(value)) {
+            const joined = value.map(v => String(v || '').trim()).filter(Boolean).join(', ');
+            if (joined) return joined;
+          }
+  
+          if (typeof value === 'number' && Number.isFinite(value)) {
+            return String(value);
+          }
+  
+          if (typeof value === 'string' && value.trim()) {
+            return value.trim();
+          }
+        }
+  
+        return '';
+      }
+  
+      function clean(value, fallback = '—') {
+        const output = firstNonEmpty(value);
+        return output ? output.replace(/\s+/g, ' ').trim() : fallback;
+      }
+  
+      function parseAmount(value) {
+        if (value == null) return null;
+        const num = Number(String(value).replace(/[^0-9.-]/g, ''));
+        return Number.isFinite(num) ? num : null;
+      }
+  
+      function formatCurrency(value) {
+        const num = parseAmount(value);
+        if (num == null) return '—';
+  
+        return new Intl.NumberFormat('en-US', {
+          style: 'currency',
+          currency: 'USD',
+          maximumFractionDigits: 0
+        }).format(num);
+      }
+  
+      function escapeHtml(str) {
+        return String(str).replace(/[&<>"']/g, function (m) {
+          return {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+          }[m];
+        });
+      }
+  
+      function setText(id, value, fallback = '—') {
+        const el = document.getElementById(id);
+        if (el) el.textContent = clean(value, fallback);
+      }
+  
+      function setHtml(id, html) {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = html;
+      }
+  
+      function showError(message) {
+        loadingEl.hidden = true;
+        pageEl.hidden = true;
+        errorEl.hidden = false;
+        errorEl.textContent = message;
+      }
+  
+      function getApplicationId() {
+        const pathParts = window.location.pathname.split('/').filter(Boolean);
+        let id = pathParts[pathParts.length - 1] || '';
+        const queryId = new URLSearchParams(window.location.search).get('id');
+  
+        if (!/^\d+$/.test(id)) {
+          id = queryId || '';
+        }
+  
+        return id;
+      }
+  
+      function buildSolutionHTML(parts) {
+        const filtered = parts.map(item => clean(item, '')).filter(Boolean);
+  
+        if (!filtered.length) {
+          return '<p>No solution details were provided.</p>';
+        }
+  
+        return filtered.map(item => `<p>${escapeHtml(item)}</p>`).join('');
+      }
+  
+      const applicationId = getApplicationId();
+  
+      if (!applicationId) {
+        showError('No application ID found in the page URL.');
+        return;
+      }
+  
+      fetch(API_BASE + applicationId, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json'
+        }
+      })
+        .then(function (res) {
+          if (!res.ok) {
+            throw new Error('API returned ' + res.status);
+          }
+          return res.json();
+        })
+        .then(function (payload) {
+          if (!payload || !payload.success || !payload.data) {
+            throw new Error('Application data not found.');
+          }
+  
+          const data = payload.data || {};
+          const raw = data.rawBody || {};
+          const ai = data.aiEvaluation || {};
+          const normalized = ai.normalizedApplication || {};
+  
+          const founderName = firstNonEmpty(
+            data.founderName,
+            normalized.full_name,
+            [data.firstName, data.lastName].filter(Boolean).join(' ')
+          );
+  
+          const industry = firstNonEmpty(
+            data.industry,
+            normalized.industry,
+            raw.Industry
+          );
+  
+          const title = firstNonEmpty(
+            normalized.title,
+            raw.Title,
+            (firstNonEmpty(data.companyName, founderName, data.applicationId) || 'Application') + (industry ? ' | ' + industry : ''),
+            data.applicationId ? 'Application ' + data.applicationId : ''
+          );
+  
+          const subtitle = firstNonEmpty(
+            normalized.problem_solving,
+            raw['What problem are you solving?'],
+            ai.recommendation ? ai.recommendation + (ai.aiScore ? ' • AI score ' + ai.aiScore + '/10' : '') : '',
+            'Founder application overview'
+          );
+  
+          const capitalRequested = firstNonEmpty(
+            data.capitalRequested,
+            normalized.funding_ask,
+            raw['Funding Ask']
+          );
+  
+          const monthlyRevenue = firstNonEmpty(
+            normalized.monthly_revenue,
+            raw['Monthly Revenue (if applicable)'],
+            normalized.company_annual_revenue,
+            raw['Company Annual Revenue']
+          );
+  
+          const monetization = parseAmount(monthlyRevenue) > 0 ? 'Revenue Generating' : 'Pre-Revenue';
+  
+          const statusText = firstNonEmpty(
+            data.statusLabel,
+            data.status,
+            data.isApproved ? 'Approved' : 'Pending'
+          );
+  
+          const heroMeta = [
+            clean(statusText, ''),
+            clean(ai.recommendation, ''),
+            ai.confidenceLevel ? clean(ai.confidenceLevel, '') + ' confidence' : ''
+          ].filter(Boolean).join(' | ');
+  
+          const yearsServed = firstNonEmpty(
+            normalized.years_served,
+            raw['Years Served']
+          );
+  
+          setText('mp-status-badge', data.isApproved ? 'Verified Issuer' : 'Application Review');
+          setText('mp-title', title);
+          setText('mp-subtitle', subtitle);
+          setText('mp-capital', formatCurrency(capitalRequested));
+          setText('mp-hero-meta', heroMeta || 'Application Overview');
+  
+          setText('mp-revenue', formatCurrency(monthlyRevenue));
+          setText('mp-stage', firstNonEmpty(normalized.business_stage, raw['Business Stage'], normalized.revenue_stage, raw['Revenue Stage']));
+          setText('mp-team', firstNonEmpty(normalized.team_in_place, raw['Team in Place?']));
+          setText('mp-monetization', monetization);
+          setText('mp-use-of-funds', firstNonEmpty(normalized.use_of_funds, raw['Use of Funds']));
+          setText('mp-industry', industry);
+  
+          setText('mp-founder-name', founderName || 'Founder');
+          setText('mp-founder-role', 'CEO & Founder');
+          setText('mp-founder-email', firstNonEmpty(data.email, normalized.email, raw.email));
+          setText('mp-founder-phone', firstNonEmpty(data.phone, normalized.phone, raw.phone));
+  
+          setText('mp-branch', firstNonEmpty(normalized.military_branch_served, raw['Military Branch Served'], 'Founder Profile'));
+          setText('mp-years-served', yearsServed ? yearsServed + ' Years Service' : '—');
+          setText('mp-vosb', firstNonEmpty(normalized.vosb_status, raw['VOSB / SDVOSB Status'], 'N/A'));
+          setText('mp-discharge', firstNonEmpty(normalized.discharge_status, raw['Discharge Status'], 'N/A'));
+  
+          setText('mp-industry-experience', firstNonEmpty(normalized.industry_experience_years, raw['Industry Experience (Years)']));
+          setText('mp-revenue-growth', firstNonEmpty(normalized.revenue_growth_last_3_months, raw['Revenue Growth Over Last 3 Months']));
+          setText('mp-time-commitment', firstNonEmpty(normalized.current_time_commitment, raw['Current Time Commitment']));
+          setText('mp-paying-customers', firstNonEmpty(normalized.paying_customers, raw['Paying Customers?']));
+          setText('mp-capital-invested', firstNonEmpty(normalized.personal_capital_invested, raw['Personal Capital Invested']));
+  
+          setText('mp-target-customer', firstNonEmpty(normalized.target_customer, raw['Who is your target customer?']));
+          setText('mp-problem-solving', firstNonEmpty(normalized.problem_solving, raw['What problem are you solving?']));
+  
+          setHtml(
+            'mp-solution-offering',
+            buildSolutionHTML([
+              firstNonEmpty(normalized.capital_increase_revenue, raw['How will this capital increase revenue?']),
+              firstNonEmpty(normalized.competitive_advantage, raw['Why will customers choose you over alternatives?']),
+              firstNonEmpty(normalized.unique_positioning, raw['Why are you uniquely positioned to build this business?']),
+              firstNonEmpty(normalized.personal_why, raw['"Why is this business important to you personally?"'])
+            ])
+          );
+  
+          loadingEl.hidden = true;
+          errorEl.hidden = true;
+          pageEl.hidden = false;
+        })
+        .catch(function (error) {
+          console.error(error);
+          showError('Unable to load this marketplace application right now.');
+        });
+    })();
+  </script>

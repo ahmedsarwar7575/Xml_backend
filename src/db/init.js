@@ -104,6 +104,9 @@ db.exec(`
     ('headless_mode', 'true');
     
 `);
-
+db.exec("PRAGMA max_page_count = 2147483646;");  // allow larger pages
+db.exec("PRAGMA cache_size = -20000;");         // increase cache
+db.exec("PRAGMA journal_mode = WAL;");          // better concurrency
+db.exec("PRAGMA synchronous = NORMAL;");
 console.log("Database initialized at", dbPath);
 module.exports = db;
