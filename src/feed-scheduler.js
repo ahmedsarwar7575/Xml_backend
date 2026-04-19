@@ -6,7 +6,7 @@ async function run() {
   await refreshAllDueFeeds();
 }
 
-cron.schedule('*/5 * * * *', () => {
+cron.schedule('*/2 * * * *', () => {
   run().catch(console.error);
 });
 

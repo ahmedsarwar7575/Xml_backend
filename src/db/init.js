@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS feeds (
     click_interval_min INTEGER NOT NULL,
     click_interval_max INTEGER NOT NULL,
     browser_profile TEXT DEFAULT 'desktop',
+    target_country TEXT DEFAULT 'Remote',
     hourly_click_limit INTEGER DEFAULT 0,
     proxy_rotation_strategy TEXT NOT NULL CHECK(proxy_rotation_strategy IN ('round-robin', 'random')),
     browser_rotation_strategy TEXT NOT NULL CHECK(browser_rotation_strategy IN ('single-per-campaign', 'per-click')),
@@ -81,7 +82,10 @@ CREATE TABLE IF NOT EXISTS feeds (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     key TEXT UNIQUE NOT NULL,
     value TEXT,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    admin_username TEXT DEFAULT 'admin',
+    admin_password TEXT DEFAULT 'password',
+    timezone TEXT DEFAULT 'UTC'
   );
 `);
 
@@ -98,6 +102,7 @@ db.exec(`
     ('capsolver_key', ''),
     ('captcha_enabled', 'false'),
     ('headless_mode', 'true');
+    
 `);
 
 console.log("Database initialized at", dbPath);

@@ -1,6 +1,12 @@
 const db = require("../db/init");
 const { parseFeedFromUrl, parseFeedFromFile } = require("./feedParser");
 
+function safeString(value, maxLength) {
+  if (value === undefined || value === null) return "";
+  const str = String(value);
+  return str.substring(0, maxLength);
+}
+
 async function refreshFeed(feed) {
   console.log(`Refreshing feed ${feed.id} (${feed.name})`);
   let newItems = [];
@@ -11,58 +17,50 @@ async function refreshFeed(feed) {
       newItems = await parseFeedFromFile(feed.source);
     }
   } catch (err) {
-    console.error(`Failed to refresh feed ${feed.id}:`, err.message);
+    console.error(`Failed to refresh feed ${feed.id}:`, err.message || err);
     return false;
   }
 
-  const existingItems = db
-    .prepare("SELECT id, url FROM feed_items WHERE feed_id = ?")
-    .all(feed.id);
-  const existingMap = new Map(existingItems.map((item) => [item.url, item.id]));
+  const processedItems = newItems.map((item) => ({
+    title: safeString(item.title, 1000),
+    description: safeString(item.description, 5000),
+    url: item.url,
+    country: safeString(item.country, 100),
+  }));
 
-  const updateStmt = db.prepare(
-    "UPDATE feed_items SET title = ?, description = ?, country = ? WHERE id = ?"
-  );
-  const insertStmt = db.prepare(
-    "INSERT INTO feed_items (feed_id, title, description, url, country) VALUES (?, ?, ?, ?, ?)"
-  );
-  const deleteStmt = db.prepare("DELETE FROM feed_items WHERE id = ?");
+  const deleteStmt = db.prepare("DELETE FROM feed_items WHERE feed_id = ?");
+  const insertStmt = db.prepare(`
+    INSERT INTO feed_items (feed_id, title, description, url, country)
+    VALUES (?, ?, ?, ?, ?)
+  `);
 
-  const transaction = db.transaction(() => {
-    const processedUrls = new Set();
-    for (const newItem of newItems) {
-      const existingId = existingMap.get(newItem.url);
-      if (existingId) {
-        updateStmt.run(
-          newItem.title,
-          newItem.description,
-          newItem.country || "",
-          existingId
-        );
-        processedUrls.add(newItem.url);
-      } else {
-        insertStmt.run(
-          feed.id,
-          newItem.title,
-          newItem.description,
-          newItem.url,
-          newItem.country || ""
-        );
-      }
-    }
-    for (const [url, id] of existingMap.entries()) {
-      if (!processedUrls.has(url)) {
-        deleteStmt.run(id);
-      }
+  const transaction = db.transaction((feedId, items) => {
+    deleteStmt.run(feedId);
+    for (const item of items) {
+      insertStmt.run(
+        feedId,
+        item.title,
+        item.description,
+        item.url,
+        item.country
+      );
     }
   });
 
-  transaction();
-  db.prepare(
-    "UPDATE feeds SET last_refresh_at = CURRENT_TIMESTAMP WHERE id = ?"
-  ).run(feed.id);
-  console.log(`Feed ${feed.id} refreshed: ${newItems.length} items processed`);
-  return true;
+  try {
+    transaction(feed.id, processedItems);
+    db.prepare(
+      "UPDATE feeds SET last_refresh_at = CURRENT_TIMESTAMP WHERE id = ?"
+    ).run(feed.id);
+    console.log(`Feed ${feed.id} refreshed: ${processedItems.length} items`);
+    return true;
+  } catch (err) {
+    console.error(
+      `Transaction failed for feed ${feed.id}:`,
+      err.message || err
+    );
+    return false;
+  }
 }
 
 async function refreshAllDueFeeds() {

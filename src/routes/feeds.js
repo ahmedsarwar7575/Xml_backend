@@ -11,9 +11,27 @@ const {
 const router = express.Router();
 const upload = multer({
   dest: "uploads/",
-  limits: { fileSize: 10 * 1024 * 1024 },
-});
+  limits: { fileSize: 50 * 1024 * 1024 },
+}); // 50MB limit
 
+function batchInsertItems(feedId, items, batchSize = 500) {
+  const insertStmt = db.prepare(`
+    INSERT INTO feed_items (feed_id, title, description, url, country)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    const insertMany = db.transaction((batchItems) => {
+      for (const item of batchItems) {
+        const title = (item.title || '').substring(0, 1000);
+        const description = (item.description || '').substring(0, 5000);
+        const country = (item.country || '').substring(0, 100);
+        insertStmt.run(feedId, title, description, item.url, country);
+      }
+    });
+    insertMany(batch);
+  }
+}
 router.get("/", (req, res) => {
   try {
     const feeds = db
@@ -40,11 +58,13 @@ router.get("/:id", (req, res) => {
 router.post("/", upload.single("file"), async (req, res) => {
   try {
     const { name, source_type, source, refresh_interval_hours = 0 } = req.body;
-    if (!name || !source_type || !source) {
+    if (!name || !source_type) {
       return res.status(400).json({ error: "Missing required fields" });
     }
+
     let finalSource = source;
     let feedItems = [];
+
     if (source_type === "url") {
       feedItems = await parseFeedFromUrl(source);
     } else if (source_type === "upload") {
@@ -54,6 +74,7 @@ router.post("/", upload.single("file"), async (req, res) => {
     } else {
       return res.status(400).json({ error: "Invalid source_type" });
     }
+
     const insertFeed = db.prepare(`
       INSERT INTO feeds (name, source_type, source, refresh_interval_hours, last_refresh_at)
       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -65,22 +86,12 @@ router.post("/", upload.single("file"), async (req, res) => {
       refresh_interval_hours
     );
     const feedId = info.lastInsertRowid;
-    const insertItem = db.prepare(`
-      INSERT INTO feed_items (feed_id, title, description, url, country)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-    const insertMany = db.transaction((items) => {
-      for (const item of items) {
-        insertItem.run(
-          feedId,
-          item.title,
-          item.description,
-          item.url,
-          item.country || ""
-        );
-      }
-    });
-    insertMany(feedItems);
+    if (feedItems.length > 5000) {
+      feedItems = feedItems.slice(0, 5000);
+      console.warn(`Feed had ${feedItems.length} items, truncated to 5000`);
+    }
+    batchInsertItems(feedId, feedItems);
+
     res
       .status(201)
       .json({
@@ -89,7 +100,7 @@ router.post("/", upload.single("file"), async (req, res) => {
         itemsCount: feedItems.length,
       });
   } catch (err) {
-    console.error(err);
+    console.error("Feed creation error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -98,21 +109,26 @@ router.put("/:id", upload.single("file"), async (req, res) => {
   try {
     const { name, source_type, source, refresh_interval_hours = 0 } = req.body;
     const feedId = req.params.id;
+
     const existing = db.prepare("SELECT * FROM feeds WHERE id = ?").get(feedId);
     if (!existing) return res.status(404).json({ error: "Feed not found" });
+
     const hasFile = !!req.file;
     const sourceChanged =
       source_type &&
       source &&
       (source !== existing.source || source_type !== existing.source_type);
+
     if (!hasFile && !sourceChanged) {
       db.prepare(
         "UPDATE feeds SET name = ?, refresh_interval_hours = ? WHERE id = ?"
       ).run(name, refresh_interval_hours, feedId);
       return res.json({ message: "Feed metadata updated" });
     }
+
     let finalSource = source;
     let feedItems = [];
+
     if (source_type === "url") {
       feedItems = await parseFeedFromUrl(source);
     } else if (source_type === "upload") {
@@ -122,6 +138,7 @@ router.put("/:id", upload.single("file"), async (req, res) => {
     } else {
       return res.status(400).json({ error: "Invalid source_type" });
     }
+
     const updateFeed = db.prepare(`
       UPDATE feeds SET name = ?, source_type = ?, source = ?, refresh_interval_hours = ?, last_refresh_at = CURRENT_TIMESTAMP
       WHERE id = ?
@@ -133,25 +150,13 @@ router.put("/:id", upload.single("file"), async (req, res) => {
       refresh_interval_hours,
       feedId
     );
+
     db.prepare("DELETE FROM feed_items WHERE feed_id = ?").run(feedId);
-    const insertItem = db.prepare(`
-      INSERT INTO feed_items (feed_id, title, description, url, country)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-    const insertMany = db.transaction((items) => {
-      for (const item of items) {
-        insertItem.run(
-          feedId,
-          item.title,
-          item.description,
-          item.url,
-          item.country || ""
-        );
-      }
-    });
-    insertMany(feedItems);
+    batchInsertItems(feedId, feedItems);
+
     res.json({ message: "Feed fully updated", itemsCount: feedItems.length });
   } catch (err) {
+    console.error("Feed update error:", err);
     res.status(500).json({ error: err.message });
   }
 });

@@ -3,6 +3,7 @@ const cron = require("node-cron");
 const db = require("./db/init");
 const clickQueue = require("./queue/clickQueue");
 const redis = require("./config/redis");
+const { nowInTimezone } = require("./utils/timezone");
 
 function distributeClicks(
   totalClicks,
@@ -72,29 +73,37 @@ function distributeClicks(
 }
 
 async function generateScheduleForCampaign(campaign) {
-  const today = new Date();
-  const dateKey = today.toISOString().split("T")[0];
-  const lockKey = `schedule_lock:${campaign.id}:${dateKey}`;
-  const locked = await redis.set(lockKey, "1", "EX", 86400, "NX");
+  const now = nowInTimezone();
+  const startDateTime = new Date(now);
+  const [startHour, startMinute] = campaign.start_time.split(":");
+  startDateTime.setHours(parseInt(startHour), parseInt(startMinute), 0, 0);
+  const endDateTime = new Date(now);
+  const [endHour, endMinute] = campaign.end_time.split(":");
+  endDateTime.setHours(parseInt(endHour), parseInt(endMinute), 0, 0);
+
+  // If we are before the start time, do nothing
+  if (now < startDateTime) return;
+  // If we are after the end time, do nothing
+  if (now > endDateTime) return;
+
+  // Use a lock key that expires after 2 hours (prevents duplicate generation only during the window)
+  const lockKey = `schedule_lock:${campaign.id}:${
+    startDateTime.toISOString().split("T")[0]
+  }`;
+  const locked = await redis.set(lockKey, "1", "EX", 7200, "NX"); // 2 hour expiry
   if (!locked) {
     console.log(
-      `Schedule already generated for campaign ${campaign.id} on ${dateKey}`
+      `Schedule already generated for campaign ${campaign.id} on ${
+        startDateTime.toISOString().split("T")[0]
+      }`
     );
     return;
   }
 
-  const startDateTime = new Date(today);
-  const [startHour, startMinute] = campaign.start_time.split(":");
-  startDateTime.setHours(parseInt(startHour), parseInt(startMinute), 0, 0);
-  const endDateTime = new Date(today);
-  const [endHour, endMinute] = campaign.end_time.split(":");
-  endDateTime.setHours(parseInt(endHour), parseInt(endMinute), 0, 0);
-  if (endDateTime <= startDateTime) return;
-  if (today > endDateTime) return;
-
-  const todayStart = new Date(today);
+  // Calculate remaining clicks for today (from startDateTime to endDateTime)
+  const todayStart = new Date(now);
   todayStart.setHours(0, 0, 0, 0);
-  const todayEnd = new Date(today);
+  const todayEnd = new Date(now);
   todayEnd.setHours(23, 59, 59, 999);
   const clicksToday = db
     .prepare(
@@ -107,13 +116,11 @@ async function generateScheduleForCampaign(campaign) {
   const remaining = Math.max(0, campaign.daily_click_target - clicksToday);
   if (remaining === 0) return;
 
-  const now = new Date();
   const startEffective = now > startDateTime ? now : startDateTime;
-  const endEffective = endDateTime;
   const timestamps = distributeClicks(
     remaining,
     startEffective,
-    endEffective,
+    endDateTime,
     campaign.click_interval_min,
     campaign.click_interval_max,
     campaign.hourly_click_limit || 0
@@ -146,11 +153,13 @@ async function runScheduler() {
   for (const campaign of campaigns) {
     await generateScheduleForCampaign(campaign);
   }
-  console.log(`Scheduler run at ${new Date().toISOString()}`);
+  console.log(`Scheduler run at ${nowInTimezone().toISOString()}`);
 }
 
 cron.schedule("* * * * *", () => {
   runScheduler().catch(console.error);
 });
 runScheduler().catch(console.error);
-console.log("Scheduler started with hourly limit support and unique job IDs");
+console.log(
+  "Scheduler started: only generates jobs when current time is within campaign window"
+);

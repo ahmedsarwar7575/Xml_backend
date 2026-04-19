@@ -55,6 +55,7 @@ router.post("/", (req, res) => {
       browser_rotation_strategy,
       hourly_click_limit = 0,
       browser_profile = "desktop",
+      target_country = "Remote",
     } = req.body;
 
     if (
@@ -77,8 +78,8 @@ router.post("/", (req, res) => {
       INSERT INTO campaigns (
         feed_id, name, keywords, daily_click_target,
         start_time, end_time, click_interval_min, click_interval_max,
-        proxy_rotation_strategy, browser_rotation_strategy, hourly_click_limit, browser_profile
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        proxy_rotation_strategy, browser_rotation_strategy, hourly_click_limit, browser_profile, target_country
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const info = stmt.run(
       feed_id,
@@ -92,11 +93,10 @@ router.post("/", (req, res) => {
       proxy_rotation_strategy,
       browser_rotation_strategy,
       hourly_click_limit,
-      browser_profile
+      browser_profile,
+      target_country
     );
-    res
-      .status(201)
-      .json({ id: info.lastInsertRowid, message: "Campaign created" });
+    res.status(201).json({ id: info.lastInsertRowid, message: "Campaign created" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -118,6 +118,7 @@ router.put("/:id", (req, res) => {
       status,
       hourly_click_limit,
       browser_profile,
+      target_country,
     } = req.body;
 
     const campaignId = req.params.id;
@@ -135,6 +136,8 @@ router.put("/:id", (req, res) => {
       browser_profile !== undefined
         ? browser_profile
         : existing.browser_profile;
+    const targetCountry =
+      target_country !== undefined ? target_country : existing.target_country;
 
     const stmt = db.prepare(`
       UPDATE campaigns SET
@@ -149,6 +152,7 @@ router.put("/:id", (req, res) => {
         proxy_rotation_strategy = ?,
         browser_rotation_strategy = ?,
         status = ?,
+        target_country = ?,
         hourly_click_limit = ?,
         browser_profile = ?
       WHERE id = ?
@@ -165,6 +169,7 @@ router.put("/:id", (req, res) => {
       proxy_rotation_strategy,
       browser_rotation_strategy,
       status !== undefined ? status : existing.status,
+      targetCountry,
       hourlyLimit,
       browserProf,
       campaignId

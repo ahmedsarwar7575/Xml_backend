@@ -8,6 +8,7 @@ const {
   getRandomMobileProfile,
   getRandomProfile,
 } = require("../utils/browserProfiles");
+const { nowInTimezone } = require("../utils/timezone");
 
 const webshareProxyIndex = new Map();
 
@@ -311,11 +312,11 @@ clickQueue.process(1, async (job) => {
   }
   console.log(`Selected browser profile: ${selectedProfile.type}`);
 
-  const now = new Date();
-  const start = new Date();
+  const now = nowInTimezone();
+  const start = new Date(now);
   const [startHour, startMinute] = campaign.start_time.split(":");
   start.setHours(parseInt(startHour), parseInt(startMinute), 0, 0);
-  const end = new Date();
+  const end = new Date(now);
   const [endHour, endMinute] = campaign.end_time.split(":");
   end.setHours(parseInt(endHour), parseInt(endMinute), 0, 0);
   if (now < start || now > end) {
@@ -385,11 +386,25 @@ clickQueue.process(1, async (job) => {
 
   const webshareKey = getWebshareApiKey();
   console.log(`Webshare API key present: ${!!webshareKey}`);
-  if (webshareKey && item.country) {
-    const countryCode = countryNameToCode(item.country);
+
+  let countryToUse = null;
+  if (campaign.target_country && campaign.target_country !== "Remote") {
+    countryToUse = campaign.target_country;
+    console.log(`Campaign has fixed country: ${countryToUse}`);
+  } else if (item.country) {
+    countryToUse = item.country;
+    console.log(`Using feed item country: ${countryToUse}`);
+  } else {
+    console.log(
+      `No country specified (campaign: ${campaign.target_country}, feed: ${item.country})`
+    );
+  }
+
+  if (webshareKey && countryToUse) {
+    const countryCode = countryNameToCode(countryToUse);
     if (countryCode) {
       console.log(
-        `Attempting to fetch Webshare proxies for country ${countryCode} (${item.country})`
+        `Attempting to fetch Webshare proxies for ${countryCode} (${countryToUse})`
       );
       const proxies = await fetchProxiesForCountry(webshareKey, countryCode, 5);
       if (proxies.length > 0) {
@@ -412,11 +427,11 @@ clickQueue.process(1, async (job) => {
       }
     } else {
       console.log(
-        `Could not map country name "${item.country}" to code – skipping auto proxy`
+        `Could not map country "${countryToUse}" to code – skipping auto proxy`
       );
     }
-  } else if (!item.country) {
-    console.log(`Item has no country – skipping auto proxy`);
+  } else {
+    console.log(`Webshare not available or no country to use`);
   }
 
   if (!proxyConfig) {
@@ -568,5 +583,5 @@ clickQueue.process(1, async (job) => {
 });
 
 console.log(
-  "Click worker started with shadow DOM captcha support, atomic locking, concurrency=1"
+  "Click worker started with shadow DOM captcha support, atomic locking, concurrency=1, timezone support, and country dropdown logic"
 );
