@@ -8,7 +8,7 @@
     "worker": "node src/workers/clickWorker.js",
     "scheduler": "node src/scheduler.js",
     "feed": "node src/feed-scheduler.js",
-    "all": "concurrently \"npm run dev\" \"npm run worker\" \"npm run scheduler\" \"npm run feed\""
+    "all": "concurrently \"npm run start\" \"npm run worker\" \"npm run scheduler\" \"npm run feed\""
   },
   "keywords": [],
   "author": "",
