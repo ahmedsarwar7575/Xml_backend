@@ -24,7 +24,7 @@ function batchInsertItems(feedId, items, batchSize = 500) {
     const insertMany = db.transaction((batchItems) => {
       for (const item of batchItems) {
         const title = (item.title || '').substring(0, 1000);
-        const description = (item.description || '').substring(0, 5000);
+        const description = (item.description || '').substring(0, 2000);
         const country = (item.country || '').substring(0, 100);
         insertStmt.run(feedId, title, description, item.url, country);
       }
@@ -87,7 +87,6 @@ router.post("/", upload.single("file"), async (req, res) => {
     );
     const feedId = info.lastInsertRowid;
     if (feedItems.length > 5000) {
-      feedItems = feedItems.slice(0, 5000);
       console.warn(`Feed had ${feedItems.length} items, truncated to 5000`);
     }
     batchInsertItems(feedId, feedItems);
