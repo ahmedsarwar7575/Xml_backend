@@ -9,9 +9,7 @@ const { pipeline } = require("stream/promises");
 const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 10 });
 const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 10 });
 
-// Hard char limits per tag — text beyond these is DISCARDED IMMEDIATELY during SAX parsing.
-// This is the fix for "Cannot create a string longer than 0x1fffffe8 characters".
-// A 2GB feed with a 50MB <DESCRIPTION> field will only ever store 1000 chars of it.
+// Hard char limits per tag — text beyond these is discarded immediately in the SAX text handler.
 const TAG_LIMITS = {
   TITLE: 1000,
   DESCRIPTION: 1000,
@@ -39,12 +37,8 @@ function normalizeLink(link) {
 }
 
 /**
- * Core SAX stream parser.
- * Accepts ANY readable stream — file, HTTP response, anything.
- * Memory usage stays constant regardless of file size.
- *
- * @param {import("stream").Readable} readableStream
- * @returns {Promise<Array<{title: string, description: string, url: string, country: string}>>}
+ * Core SAX parser — accepts any readable stream (file or HTTP response).
+ * Constant memory regardless of file size.
  */
 function parseXmlStream(readableStream) {
   return new Promise((resolve, reject) => {
@@ -71,13 +65,9 @@ function parseXmlStream(readableStream) {
 
     parser.on("text", (text) => {
       if (!currentTag) return;
-
       const limit = TAG_LIMITS[currentTag];
       const remaining = limit - currentText.length;
-
-      if (remaining <= 0) return; // already full — discard entirely, no string growth
-
-      // Only append up to the remaining allowed chars
+      if (remaining <= 0) return; // already full — discard, no string growth
       currentText +=
         remaining >= text.length ? text : text.substring(0, remaining);
     });
@@ -98,36 +88,22 @@ function parseXmlStream(readableStream) {
       }
     });
 
+    // SAX strict mode throws on malformed XML — recover and continue
     parser.on("error", (err) => {
-      // SAX is strict — recover from non-fatal errors and keep going
-      console.warn(`SAX parse warning (non-fatal): ${err.message}`);
+      console.warn(`SAX warning (skipping): ${err.message}`);
       parser._parser.error = null;
       parser._parser.resume();
     });
 
     parser.on("end", () => resolve(items));
-
     readableStream.on("error", reject);
     readableStream.pipe(parser);
   });
 }
 
-/**
- * Fetch feed from URL and parse it.
- * Pipes the HTTP response DIRECTLY into the SAX parser —
- * no temp file, no disk I/O, parsing starts immediately while downloading.
- *
- * For a 2GB feed:
- *   - At 100 Mbps  → ~160 seconds (network is the bottleneck)
- *   - At 1 Gbps    → ~16 seconds
- *   - SAX parsing itself takes ~5 seconds for 2GB (400 MB/s)
- *   - Memory usage: constant ~20MB regardless of file size
- *
- * @param {string} url
- * @param {number} retries
- * @returns {Promise<Array>}
- */
+
 async function parseFeedFromUrl(url, retries = 2) {
+  console.log(`parseFeedFromUrl: parsing ${url}`);
   let attempt = 0;
   let lastError = null;
 
@@ -136,18 +112,15 @@ async function parseFeedFromUrl(url, retries = 2) {
       const response = await axios({
         method: "GET",
         url,
-        responseType: "stream",
-        timeout: 600000, // 10 minutes — needed for 2GB+ files over slow connections
+        responseType: "stream", // ← THIS IS THE CRITICAL LINE. DO NOT REMOVE.
+        timeout: 600000, // 10 min — needed for 2GB+ feeds
         headers: { "Accept-Encoding": "gzip, deflate, br" },
         httpAgent,
         httpsAgent,
       });
 
-      // Pipe HTTP stream directly into SAX — download and parse happen IN PARALLEL
-      // Old approach: download 2GB to disk (wait ~160s), THEN parse (~5s) = 165s + 2GB disk needed
-      // New approach: download + parse simultaneously = ~160s, zero extra disk needed
       const items = await parseXmlStream(response.data);
-      console.log(`Parsed ${items.length} items from ${url}`);
+      console.log(`parseFeedFromUrl: parsed ${items.length} items from ${url}`);
       return items;
     } catch (err) {
       lastError = err;
@@ -161,24 +134,19 @@ async function parseFeedFromUrl(url, retries = 2) {
 }
 
 /**
- * Parse a local XML file.
- * Streams from disk — works on any file size.
- *
- * @param {string} filePath
- * @returns {Promise<Array>}
+ * Parse a local XML file — streams from disk, works on any file size.
  */
 async function parseFeedFromFile(filePath) {
   const items = await parseXmlStream(fs.createReadStream(filePath));
-  console.log(`Parsed ${items.length} items from ${filePath}`);
+  console.log(
+    `parseFeedFromFile: parsed ${items.length} items from ${filePath}`
+  );
   return items;
 }
 
 /**
- * Synchronous XML parser for small in-memory strings only.
- * DO NOT pass large strings here — this is for small feed uploads.
- *
- * @param {string} xmlData
- * @returns {Array}
+ * Synchronous parser for small in-memory XML strings only (feed uploads etc).
+ * Do NOT pass large responses here.
  */
 function parseXml(xmlData) {
   const { XMLParser } = require("fast-xml-parser");
