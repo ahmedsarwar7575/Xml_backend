@@ -51,7 +51,7 @@ function extractItemsFromData(dataObj) {
   if (Array.isArray(dataObj)) {
     return dataObj.map((item) => ({
       title: safeString(item.title || item.TITLE || "", 1000),
-      description: safeString(item.description || item.DESCRIPTION || "", 5000),
+      description: safeString(item.description || item.DESCRIPTION || "", 1500),
       url: item.link || item.url || item.URL || "",
     }));
   }
