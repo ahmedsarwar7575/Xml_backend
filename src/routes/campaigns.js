@@ -96,7 +96,9 @@ router.post("/", (req, res) => {
       browser_profile,
       target_country
     );
-    res.status(201).json({ id: info.lastInsertRowid, message: "Campaign created" });
+    res
+      .status(201)
+      .json({ id: info.lastInsertRowid, message: "Campaign created" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -138,6 +140,7 @@ router.put("/:id", (req, res) => {
         : existing.browser_profile;
     const targetCountry =
       target_country !== undefined ? target_country : existing.target_country;
+    const newStatus = status !== undefined ? status : existing.status;
 
     const stmt = db.prepare(`
       UPDATE campaigns SET
@@ -168,7 +171,7 @@ router.put("/:id", (req, res) => {
       click_interval_max,
       proxy_rotation_strategy,
       browser_rotation_strategy,
-      status !== undefined ? status : existing.status,
+      newStatus,
       targetCountry,
       hourlyLimit,
       browserProf,

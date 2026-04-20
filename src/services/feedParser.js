@@ -1,6 +1,16 @@
 const fs = require("fs");
+const path = require("path");
 const axios = require("axios");
+const http = require("http");
+const https = require("https");
 const { XMLParser } = require("fast-xml-parser");
+const { PassThrough } = require("stream");
+const { promisify } = require("util");
+const pipeline = promisify(require("stream").pipeline);
+
+// Custom HTTP agents for keep-alive and concurrency
+const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 10 });
+const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 10 });
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -175,35 +185,57 @@ function parseXml(xmlData) {
   );
 }
 
+/**
+ * Download a large XML feed to a temporary file using streaming.
+ * @param {string} url - Feed URL
+ * @returns {Promise<string>} Path to the downloaded temporary file
+ */
+async function downloadFeedToTempFile(url) {
+  const tempFile = path.join(
+    __dirname,
+    "../../temp",
+    `feed_${Date.now()}_${Math.random().toString(36).substr(2, 6)}.xml`
+  );
+  if (!fs.existsSync(path.dirname(tempFile)))
+    fs.mkdirSync(path.dirname(tempFile), { recursive: true });
+
+  const response = await axios({
+    method: "GET",
+    url,
+    responseType: "stream",
+    timeout: 1200000, // 2 minutes
+    headers: {
+      "Accept-Encoding": "gzip, deflate, br",
+    },
+    httpAgent,
+    httpsAgent,
+  });
+
+  const writer = fs.createWriteStream(tempFile);
+  await pipeline(response.data, writer);
+  console.log(
+    `Downloaded feed to ${tempFile} (${fs.statSync(tempFile).size} bytes)`
+  );
+  return tempFile;
+}
+
 async function parseFeedFromUrl(url, retries = 2) {
   let attempt = 0;
+  let lastError = null;
   while (attempt <= retries) {
     try {
-      const response = await axios.get(url, {
-        timeout: 180000, // 2 minutes
-        maxContentLength: Infinity,
-        responseType: 'text',
-        decompress: true,
-        onDownloadProgress: (progressEvent) => {
-          // Optional: log progress for very large files
-          if (progressEvent.total) {
-            const percent = (progressEvent.loaded / progressEvent.total * 100).toFixed(2);
-            console.log(`Downloading feed: ${percent}%`);
-          }
-        }
-      });
-      return parseXml(response.data);
+      const tempFile = await downloadFeedToTempFile(url);
+      const xmlData = fs.readFileSync(tempFile, "utf8");
+      fs.unlinkSync(tempFile); // clean up
+      return parseXml(xmlData);
     } catch (err) {
-      if (err.code === 'ECONNABORTED' || err.message.includes('aborted')) {
-        console.warn(`Attempt ${attempt + 1} aborted, retrying...`);
-        attempt++;
-        if (attempt > retries) throw new Error(`Feed download failed after ${retries + 1} attempts: ${err.message}`);
-        await new Promise(r => setTimeout(r, 5000)); // wait 5 seconds before retry
-      } else {
-        throw err;
-      }
+      lastError = err;
+      console.warn(`Attempt ${attempt + 1} failed for ${url}: ${err.message}`);
+      attempt++;
+      if (attempt <= retries) await new Promise((r) => setTimeout(r, 5000));
     }
   }
+  throw lastError;
 }
 
 async function parseFeedFromFile(filePath) {
