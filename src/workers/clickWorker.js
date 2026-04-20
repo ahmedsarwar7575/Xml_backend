@@ -406,7 +406,7 @@ clickQueue.process(1, async (job) => {
       console.log(
         `Attempting to fetch Webshare proxies for ${countryCode} (${countryToUse})`
       );
-      const proxies = await fetchProxiesForCountry(webshareKey, countryCode, 5);
+      const proxies = await fetchProxiesForCountry(webshareKey, countryCode, 25);
       if (proxies.length > 0) {
         let idx = webshareProxyIndex.get(campaignId) || 0;
         const selected = proxies[idx % proxies.length];
