@@ -3,30 +3,12 @@ const path = require("path");
 const axios = require("axios");
 const http = require("http");
 const https = require("https");
-const { XMLParser } = require("fast-xml-parser");
+const sax = require("sax");
 const { PassThrough } = require("stream");
-const { promisify } = require("util");
-const pipeline = promisify(require("stream").pipeline);
+const { pipeline } = require("stream/promises");
 
-// Custom HTTP agents for keep-alive and concurrency
 const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 10 });
 const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 10 });
-
-const parser = new XMLParser({
-  ignoreAttributes: false,
-  attributeNamePrefix: "@_",
-  parseTagValue: true,
-  trimValues: true,
-  allowBooleanAttributes: true,
-  processEntities: {
-    enabled: true,
-    maxEntityCount: 20000,
-    maxEntitySize: 10000,
-    maxExpansionDepth: 10000,
-    maxTotalExpansions: 200000,
-    maxExpandedLength: 500000,
-  },
-});
 
 function safeString(value, maxLen) {
   if (value === undefined || value === null) return "";
@@ -47,166 +29,80 @@ function normalizeLink(link) {
   return link;
 }
 
-function extractItemsFromData(dataObj) {
-  if (Array.isArray(dataObj)) {
-    return dataObj.map((item) => ({
-      title: safeString(item.title || item.TITLE || "", 1000),
-      description: safeString(item.description || item.DESCRIPTION || "", 1500),
-      url: item.link || item.url || item.URL || "",
-    }));
-  }
-  const possibleContainers = [
-    "item",
-    "items",
-    "entry",
-    "entries",
-    "record",
-    "records",
-    "post",
-    "posts",
-    "node",
-    "nodes",
-    "job",
-    "jobs",
-  ];
-  for (const container of possibleContainers) {
-    if (dataObj[container]) {
-      let items = dataObj[container];
-      if (!Array.isArray(items)) items = [items];
-      return items.map((item) => ({
-        title: safeString(item.title || item.TITLE || "", 1000),
-        description: safeString(
-          item.description || item.DESCRIPTION || "",
-          5000
-        ),
-        url: item.link || item.url || item.URL || "",
-      }));
-    }
-  }
-  const items = [];
-  for (const key in dataObj) {
-    if (
-      Object.prototype.hasOwnProperty.call(dataObj, key) &&
-      typeof dataObj[key] === "object" &&
-      !Array.isArray(dataObj[key]) &&
-      dataObj[key] !== null
-    ) {
-      const item = dataObj[key];
-      items.push({
-        title: safeString(item.title || item.TITLE || key, 1000),
-        description: safeString(
-          item.description || item.DESCRIPTION || "",
-          5000
-        ),
-        url: item.link || item.url || item.URL || "",
-      });
-    } else if (Array.isArray(dataObj[key])) {
-      for (const subItem of dataObj[key]) {
-        items.push({
-          title: safeString(subItem.title || subItem.TITLE || "", 1000),
-          description: safeString(
-            subItem.description || subItem.DESCRIPTION || "",
-            5000
-          ),
-          url: subItem.link || subItem.url || subItem.URL || "",
-        });
-      }
-    }
-  }
-  return items;
-}
-
-function parseRss(parsed) {
-  const channel = parsed.rss?.channel;
-  if (!channel) return [];
-  let items = channel.item || [];
-  if (!Array.isArray(items)) items = [items];
-  return items.map((item) => ({
-    title: safeString(item.title || "", 1000),
-    description: safeString(
-      item.description || item["content:encoded"] || "",
-      5000
-    ),
-    url: item.link || item.guid || "",
-  }));
-}
-
-function parseAtom(parsed) {
-  const feed = parsed.feed;
-  if (!feed) return [];
-  let entries = feed.entry || [];
-  if (!Array.isArray(entries)) entries = [entries];
-  return entries.map((entry) => ({
-    title: safeString(entry.title || "", 1000),
-    description: safeString(entry.summary || entry.content || "", 5000),
-    url: normalizeLink(entry.link),
-  }));
-}
-
-function parseRdf(parsed) {
-  const rdf = parsed["rdf:RDF"];
-  if (!rdf) return [];
-  let items = rdf.item || [];
-  if (!Array.isArray(items)) items = [items];
-  return items.map((item) => ({
-    title: safeString(item.title || "", 1000),
-    description: safeString(item.description || "", 5000),
-    url: item.link || "",
-  }));
-}
-
-function parseSource(parsed) {
-  const source = parsed.source || parsed.Source;
-  if (!source) return [];
-  let jobs = source.job || source.Job || [];
-  if (!Array.isArray(jobs)) jobs = [jobs];
-  return jobs.map((job) => ({
-    title: safeString(job.TITLE || job.Title || "", 1000),
-    description: safeString(job.DESCRIPTION || job.Description || "", 5000),
-    url: job.URL || job.Url || job.url || "",
-    country: safeString(job.COUNTRY || job.Country || "", 100),
-  }));
-}
-
-function parseXml(xmlData) {
-  const parsed = parser.parse(xmlData);
-  if (parsed["?xml"]) delete parsed["?xml"];
-  if (parsed.rss) return parseRss(parsed);
-  if (parsed.feed) return parseAtom(parsed);
-  if (parsed["rdf:RDF"]) return parseRdf(parsed);
-  if (parsed.source || parsed.Source) return parseSource(parsed);
-  const rootKey = Object.keys(parsed)[0];
-  if (rootKey && parsed[rootKey] && typeof parsed[rootKey] === "object") {
-    const items = extractItemsFromData(parsed[rootKey]);
-    if (items.length) return items;
-  }
-  throw new Error(
-    `Unsupported feed format. Root keys: ${Object.keys(parsed).join(", ")}`
-  );
-}
-
 /**
- * Download a large XML feed to a temporary file using streaming.
- * @param {string} url - Feed URL
- * @returns {Promise<string>} Path to the downloaded temporary file
+ * Stream‑parse an XML file and extract items.
+ * @param {string} filePath - Path to the XML file (temporary).
+ * @returns {Promise<Array>} Array of items with {title, description, url, country}
  */
+function parseXmlFileStream(filePath) {
+  return new Promise((resolve, reject) => {
+    const items = [];
+    let currentJob = null;
+    let currentTag = null;
+    let currentText = "";
+
+    const parser = sax.createStream(true, {
+      trim: true,
+      normalize: true,
+      lowercase: false,
+    });
+
+    parser.on("opentag", (node) => {
+      const tagName = node.name;
+      if (tagName === "job") {
+        currentJob = {};
+      } else if (
+        currentJob &&
+        ["TITLE", "DESCRIPTION", "URL", "COUNTRY"].includes(tagName)
+      ) {
+        currentTag = tagName;
+        currentText = "";
+      }
+    });
+
+    parser.on("text", (text) => {
+      if (currentTag) {
+        currentText += text;
+      }
+    });
+
+    parser.on("closetag", (tagName) => {
+      if (tagName === "job" && currentJob) {
+        items.push({
+          title: safeString(currentJob.TITLE || "", 1000),
+          description: safeString(currentJob.DESCRIPTION || "", 2000),
+          url: currentJob.URL || "",
+          country: safeString(currentJob.COUNTRY || "", 100),
+        });
+        currentJob = null;
+      } else if (currentJob && currentTag === tagName) {
+        currentJob[currentTag] = currentText.trim();
+        currentTag = null;
+        currentText = "";
+      }
+    });
+
+    parser.on("error", reject);
+    parser.on("end", () => resolve(items));
+
+    fs.createReadStream(filePath).pipe(parser);
+  });
+}
+
 async function downloadFeedToTempFile(url) {
+  const tempDir = path.join(__dirname, "../../temp");
+  if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
   const tempFile = path.join(
-    __dirname,
-    "../../temp",
+    tempDir,
     `feed_${Date.now()}_${Math.random().toString(36).substr(2, 6)}.xml`
   );
-  if (!fs.existsSync(path.dirname(tempFile)))
-    fs.mkdirSync(path.dirname(tempFile), { recursive: true });
 
   const response = await axios({
     method: "GET",
     url,
     responseType: "stream",
-    timeout: 1200000, // 2 minutes
-    headers: {
-      "Accept-Encoding": "gzip, deflate, br",
-    },
+    timeout: 120000,
+    headers: { "Accept-Encoding": "gzip, deflate, br" },
     httpAgent,
     httpsAgent,
   });
@@ -225,9 +121,9 @@ async function parseFeedFromUrl(url, retries = 2) {
   while (attempt <= retries) {
     try {
       const tempFile = await downloadFeedToTempFile(url);
-      const xmlData = fs.readFileSync(tempFile, "utf8");
-      fs.unlinkSync(tempFile); // clean up
-      return parseXml(xmlData);
+      const items = await parseXmlFileStream(tempFile);
+      fs.unlinkSync(tempFile);
+      return items;
     } catch (err) {
       lastError = err;
       console.warn(`Attempt ${attempt + 1} failed for ${url}: ${err.message}`);
@@ -239,8 +135,103 @@ async function parseFeedFromUrl(url, retries = 2) {
 }
 
 async function parseFeedFromFile(filePath) {
-  const xmlData = fs.readFileSync(filePath, "utf8");
-  return parseXml(xmlData);
+  const items = await parseXmlFileStream(filePath);
+  return items;
 }
 
-module.exports = { parseFeedFromUrl, parseFeedFromFile };
+// Keep the old synchronous parser for backward compatibility (used by feed upload? Not needed but kept)
+function parseXml(xmlData) {
+  // This function is no longer used for large feeds; kept for small uploads
+  const parser = require("fast-xml-parser");
+  const { XMLParser } = parser;
+  const xmlParser = new XMLParser({
+    ignoreAttributes: false,
+    attributeNamePrefix: "@_",
+    parseTagValue: true,
+    trimValues: true,
+    allowBooleanAttributes: true,
+    processEntities: {
+      enabled: true,
+      maxEntityCount: 20000,
+      maxEntitySize: 10000,
+      maxExpansionDepth: 10000,
+      maxTotalExpansions: 200000,
+      maxExpandedLength: 500000,
+    },
+  });
+  const parsed = xmlParser.parse(xmlData);
+  if (parsed["?xml"]) delete parsed["?xml"];
+  if (parsed.rss) {
+    const channel = parsed.rss?.channel;
+    if (!channel) return [];
+    let items = channel.item || [];
+    if (!Array.isArray(items)) items = [items];
+    return items.map((item) => ({
+      title: safeString(item.title || "", 1000),
+      description: safeString(
+        item.description || item["content:encoded"] || "",
+        2000
+      ),
+      url: item.link || item.guid || "",
+    }));
+  }
+  if (parsed.feed) {
+    const feed = parsed.feed;
+    if (!feed) return [];
+    let entries = feed.entry || [];
+    if (!Array.isArray(entries)) entries = [entries];
+    return entries.map((entry) => ({
+      title: safeString(entry.title || "", 1000),
+      description: safeString(entry.summary || entry.content || "", 2000),
+      url: normalizeLink(entry.link),
+    }));
+  }
+  if (parsed["rdf:RDF"]) {
+    const rdf = parsed["rdf:RDF"];
+    if (!rdf) return [];
+    let items = rdf.item || [];
+    if (!Array.isArray(items)) items = [items];
+    return items.map((item) => ({
+      title: safeString(item.title || "", 1000),
+      description: safeString(item.description || "", 2000),
+      url: item.link || "",
+    }));
+  }
+  if (parsed.source || parsed.Source) {
+    const source = parsed.source || parsed.Source;
+    if (!source) return [];
+    let jobs = source.job || source.Job || [];
+    if (!Array.isArray(jobs)) jobs = [jobs];
+    return jobs.map((job) => ({
+      title: safeString(job.TITLE || job.Title || "", 1000),
+      description: safeString(job.DESCRIPTION || job.Description || "", 2000),
+      url: job.URL || job.Url || job.url || "",
+      country: safeString(job.COUNTRY || job.Country || "", 100),
+    }));
+  }
+  const rootKey = Object.keys(parsed)[0];
+  if (rootKey && parsed[rootKey] && typeof parsed[rootKey] === "object") {
+    // Fallback extraction (kept simple)
+    const items = [];
+    for (const key in parsed[rootKey]) {
+      const item = parsed[rootKey][key];
+      if (item && typeof item === "object") {
+        items.push({
+          title: safeString(item.title || item.TITLE || "", 1000),
+          description: safeString(
+            item.description || item.DESCRIPTION || "",
+            2000
+          ),
+          url: item.link || item.url || item.URL || "",
+          country: safeString(item.country || item.COUNTRY || "", 100),
+        });
+      }
+    }
+    if (items.length) return items;
+  }
+  throw new Error(
+    `Unsupported feed format. Root keys: ${Object.keys(parsed).join(", ")}`
+  );
+}
+
+module.exports = { parseFeedFromUrl, parseFeedFromFile, parseXml };
