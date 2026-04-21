@@ -548,7 +548,8 @@ clickQueue.process(1, async (job) => {
         if (currentProxyConfig) {
           console.log("Fetching real exit IP from proxy...");
           const ipInfo = await getIpAndCountryViaProxy(currentProxyConfig);
-          if (ipInfo.ip) ipAddress = ipInfo.ip;
+          // Store real IP in geolocation for display, keep proxyKey in ipAddress for dedup
+          if (ipInfo.ip) result.realIp = ipInfo.ip;
           if (ipInfo.country) ipCountry = ipInfo.country;
         } else {
           console.log("Fetching direct IP/country...");
@@ -577,22 +578,23 @@ clickQueue.process(1, async (job) => {
   if (browser) await browser.close();
 
   const insertClick = db.prepare(`
-    INSERT INTO clicks (campaign_id, feed_item_id, proxy_id, status, final_url, ip_address, ip_country, user_agent, browser_type_used, error_message, timestamp)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  insertClick.run(
-    campaignId,
-    item.id,
-    proxyRecord?.id || null,
-    result.success ? "success" : "failure",
-    result.success ? item.url : result?.finalUrl,
-    ipAddress,
-    ipCountry,
-    result.userAgent,
-    selectedProfile.type,
-    result.errorMessage,
-    new Date().toISOString()
-  );
+  INSERT INTO clicks (campaign_id, feed_item_id, proxy_id, status, final_url, ip_address, geolocation, ip_country, user_agent, browser_type_used, error_message, timestamp)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`);
+insertClick.run(
+  campaignId,
+  item.id,
+  proxyRecord?.id || null,
+  result.success ? "success" : "failure",
+  result.success ? item.url : result?.finalUrl,
+  ipAddress,              // proxyKey for webshare, real IP for direct/manual
+  result.realIp || null,  // real exit IP stored in geolocation column
+  ipCountry,
+  result.userAgent,
+  selectedProfile.type,
+  result.errorMessage,
+  new Date().toISOString()
+);
 
   db.prepare("UPDATE feed_items SET locked_until = NULL WHERE id = ?").run(
     item.id
