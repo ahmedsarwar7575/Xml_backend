@@ -60,6 +60,7 @@ async function getProxiesByCountry(apiKey, countryCode, quantity = 25) {
     port: 80,
     proxy_url: `http://${encodeURIComponent(proxy.username)}:${encodeURIComponent(proxy.password)}@p.webshare.io:80`,
     ip: proxy.proxy_address || null,
+    proxyKey: proxy.username,   // ← unique key for deduplication
     raw: proxy,
   }));
   return proxies;

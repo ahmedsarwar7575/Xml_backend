@@ -10,8 +10,6 @@ const {
 } = require("../utils/browserProfiles");
 const { nowInTimezone } = require("../utils/timezone");
 
-const webshareProxyIndex = new Map();
-
 function getSetting(key) {
   const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(key);
   return row ? row.value : null;
@@ -94,7 +92,7 @@ async function detectCaptcha(page) {
 
 async function solveCaptchaOnPage(page, capsolverKey, captchaEnabled) {
   if (!captchaEnabled || !capsolverKey) {
-    console.log("   Captcha solving disabled or no API key – skipping");
+    console.log("   Captcha solving disabled or no API key - skipping");
     return false;
   }
   const pageUrl = page.url();
@@ -106,11 +104,9 @@ async function solveCaptchaOnPage(page, capsolverKey, captchaEnabled) {
   }
   let solved = false;
   for (const captcha of captchas) {
-    console.log(
-      `   🧩 Detected: ${captcha.type} | siteKey: ${captcha.siteKey}`
-    );
+    console.log(`   Detected: ${captcha.type} | siteKey: ${captcha.siteKey}`);
     if (!captcha.siteKey) {
-      console.log("   ⚠️ No siteKey found, skipping");
+      console.log("   No siteKey found, skipping");
       continue;
     }
     try {
@@ -120,7 +116,7 @@ async function solveCaptchaOnPage(page, capsolverKey, captchaEnabled) {
           websiteURL: pageUrl,
           websiteKey: captcha.siteKey,
         });
-        console.log("   ✅ Turnstile solved, injecting token...");
+        console.log("   Turnstile solved, injecting token...");
         await page.evaluate((token) => {
           const widget = document.querySelector(".cf-turnstile");
           if (widget && widget.shadowRoot) {
@@ -149,7 +145,7 @@ async function solveCaptchaOnPage(page, capsolverKey, captchaEnabled) {
           websiteURL: pageUrl,
           websiteKey: captcha.siteKey,
         });
-        console.log("   ✅ hCaptcha solved, injecting token...");
+        console.log("   hCaptcha solved, injecting token...");
         await page.evaluate((token) => {
           const input = document.querySelector('[name="h-captcha-response"]');
           if (input) input.value = token;
@@ -163,7 +159,7 @@ async function solveCaptchaOnPage(page, capsolverKey, captchaEnabled) {
           websiteURL: pageUrl,
           websiteKey: captcha.siteKey,
         });
-        console.log("   ✅ reCAPTCHA solved, injecting token...");
+        console.log("   reCAPTCHA solved, injecting token...");
         await page.evaluate((token) => {
           const input = document.querySelector('[name="g-recaptcha-response"]');
           if (input) input.value = token;
@@ -174,7 +170,7 @@ async function solveCaptchaOnPage(page, capsolverKey, captchaEnabled) {
       }
       await page.waitForTimeout(3000);
     } catch (err) {
-      console.error(`   ❌ Failed to solve ${captcha.type}:`, err.message);
+      console.error(`   Failed to solve ${captcha.type}:`, err.message);
     }
   }
   return solved;
@@ -271,7 +267,6 @@ async function executeClick(
     const solved = await solveCaptchaOnPage(page, capsolverKey, captchaEnabled);
     if (solved) {
       console.log("   Captcha solved, waiting for navigation...");
-      // Scroll before navigation to avoid context destruction
       try {
         await smoothScroll(page);
       } catch (scrollErr) {
@@ -289,7 +284,7 @@ async function executeClick(
     const userAgent = await page.evaluate(() => navigator.userAgent);
     return { success: true, finalUrl, userAgent };
   } catch (err) {
-    console.error(`   ❌ Click execution error: ${err.message}`);
+    console.error(`   Click execution error: ${err.message}`);
     return { success: false, errorMessage: err.message };
   }
 }
@@ -304,7 +299,7 @@ clickQueue.process(1, async (job) => {
     .prepare(`SELECT * FROM campaigns WHERE id = ? AND status = 1`)
     .get(campaignId);
   if (!campaign) {
-    console.log(`Campaign ${campaignId} not active – skipping`);
+    console.log(`Campaign ${campaignId} not active - skipping`);
     return { skipped: true, reason: "Inactive" };
   }
   console.log(`Campaign: ${campaign.name} (Feed ID: ${campaign.feed_id})`);
@@ -330,7 +325,7 @@ clickQueue.process(1, async (job) => {
     console.log(
       `Outside active hours (now=${now.toLocaleTimeString()}, window=${
         campaign.start_time
-      }-${campaign.end_time}) – skipping`
+      }-${campaign.end_time}) - skipping`
     );
     return { skipped: true, reason: "Outside hours" };
   }
@@ -343,15 +338,12 @@ clickQueue.process(1, async (job) => {
     hourEnd.setHours(hourStart.getHours() + 1);
     const clicksThisHour = db
       .prepare(
-        `
-      SELECT COUNT(*) as count FROM clicks
-      WHERE campaign_id = ? AND timestamp BETWEEN ? AND ?
-    `
+        `SELECT COUNT(*) as count FROM clicks WHERE campaign_id = ? AND timestamp BETWEEN ? AND ?`
       )
       .get(campaignId, hourStart.toISOString(), hourEnd.toISOString()).count;
     if (clicksThisHour >= campaign.hourly_click_limit) {
       console.log(
-        `Hourly limit reached (${clicksThisHour}/${campaign.hourly_click_limit}) – skipping`
+        `Hourly limit reached (${clicksThisHour}/${campaign.hourly_click_limit}) - skipping`
       );
       return { skipped: true, reason: "Hourly limit exceeded" };
     }
@@ -362,19 +354,24 @@ clickQueue.process(1, async (job) => {
 
   const claimStmt = db.prepare(`
     UPDATE feed_items
-    SET locked_until = datetime('now', '+5 minutes')
+    SET locked_until = datetime('now', '+10 minutes')
     WHERE id = (
       SELECT fi.id
       FROM feed_items fi
-      LEFT JOIN clicks c ON c.feed_item_id = fi.id AND CAST(c.campaign_id AS INTEGER) = ?
       WHERE fi.feed_id = ?
-        AND c.id IS NULL
         AND (fi.locked_until IS NULL OR fi.locked_until < datetime('now'))
+        AND fi.url NOT IN (
+          SELECT fi2.url
+          FROM feed_items fi2
+          INNER JOIN clicks c ON c.feed_item_id = fi2.id
+          WHERE c.campaign_id = ? AND c.status = 'success'
+        )
+      ORDER BY fi.id ASC
       LIMIT 1
     )
     RETURNING id, url, title, country
   `);
-  const item = claimStmt.get(campaignId, campaign.feed_id);
+  const item = claimStmt.get(campaign.feed_id, campaignId);
   if (!item) {
     console.log(`No items left for campaign ${campaignId}`);
     return { skipped: true, reason: "No items" };
@@ -390,6 +387,7 @@ clickQueue.process(1, async (job) => {
   let ipAddress = null;
   let ipCountry = null;
   let proxySource = "none";
+  let selectedWebshareProxy = null;
 
   const webshareKey = getWebshareApiKey();
   console.log(`Webshare API key present: ${!!webshareKey}`);
@@ -410,39 +408,56 @@ clickQueue.process(1, async (job) => {
   if (webshareKey && countryToUse) {
     const countryCode = countryNameToCode(countryToUse);
     if (countryCode) {
-      console.log(`Attempting to fetch Webshare proxies for ${countryCode} (${countryToUse})`);
-      // Fetch at least daily_click_target proxies (min 25)
+      console.log(
+        `Attempting to fetch Webshare proxies for ${countryCode} (${countryToUse})`
+      );
       const neededCount = Math.max(campaign.daily_click_target, 25);
-      const allProxies = await fetchProxiesForCountry(webshareKey, countryCode, neededCount);
+      const allProxies = await fetchProxiesForCountry(
+        webshareKey,
+        countryCode,
+        neededCount
+      );
       if (allProxies.length > 0) {
-        // Get today's date range (in the configured timezone)
         const todayStart = new Date(nowInTimezone());
         todayStart.setHours(0, 0, 0, 0);
         const todayEnd = new Date(todayStart);
         todayEnd.setDate(todayStart.getDate() + 1);
-        // Query used IPs for this campaign today
-        const usedIPs = db.prepare(`
-          SELECT DISTINCT ip_address FROM clicks
-          WHERE campaign_id = ? AND ip_address IS NOT NULL AND timestamp BETWEEN ? AND ?
-        `).all(campaignId, todayStart.toISOString(), todayEnd.toISOString()).map(row => row.ip_address);
-        console.log(`Used IPs today for this campaign: ${usedIPs.length}`);
-        // Filter out used IPs
-        const availableProxies = allProxies.filter(p => !usedIPs.includes(p.ip));
+
+        const usedProxyKeys = db
+          .prepare(
+            `SELECT DISTINCT ip_address FROM clicks WHERE campaign_id = ? AND ip_address IS NOT NULL AND timestamp BETWEEN ? AND ?`
+          )
+          .all(campaignId, todayStart.toISOString(), todayEnd.toISOString())
+          .map((row) => row.ip_address);
+
+        console.log(`Used proxy keys today: ${usedProxyKeys.length}`);
+
+        const availableProxies = allProxies.filter(
+          (p) =>
+            !usedProxyKeys.includes(p.proxyKey) && !usedProxyKeys.includes(p.ip)
+        );
+
         if (availableProxies.length > 0) {
-          // Pick a random unused proxy
-          const randomIndex = Math.floor(Math.random() * availableProxies.length);
+          const randomIndex = Math.floor(
+            Math.random() * availableProxies.length
+          );
           const selected = availableProxies[randomIndex];
+          selectedWebshareProxy = selected;
           proxyConfig = parseProxy(selected.proxy_url);
           proxyRecord = { id: null, proxy_url: selected.proxy_url };
-          ipAddress = selected.ip;
+          ipAddress = selected.proxyKey;
           ipCountry = selected.country;
           proxySource = "webshare";
-          console.log(`✅ Using Webshare proxy ${selected.index}/${allProxies.length} (IP: ${selected.ip}) for ${countryCode}`);
+          console.log(
+            `Using Webshare proxy ${selected.index}/${allProxies.length} (key: ${selected.proxyKey}) for ${countryCode}`
+          );
         } else {
-          console.log(`❌ No unused Webshare proxies available for ${countryCode}`);
+          console.log(
+            `No unused Webshare proxies available for ${countryCode}`
+          );
         }
       } else {
-        console.log(`❌ No Webshare proxies available for ${countryCode}`);
+        console.log(`No Webshare proxies available for ${countryCode}`);
       }
     }
   }
@@ -474,7 +489,7 @@ clickQueue.process(1, async (job) => {
       proxyRecord = selectedProxy;
       proxySource = "manual";
       console.log(
-        `✅ Using manual proxy: ${selectedProxy.proxy_url.substring(0, 50)}...`
+        `Using manual proxy: ${selectedProxy.proxy_url.substring(0, 50)}...`
       );
     } else {
       console.log(`No manual proxies configured, using direct connection`);
@@ -530,29 +545,29 @@ clickQueue.process(1, async (job) => {
       );
       if (clickResult.success) {
         result = clickResult;
-        if (!ipAddress && currentProxyConfig) {
-          console.log("Fetching IP/country from proxy...");
+        if (currentProxyConfig) {
+          console.log("Fetching real exit IP from proxy...");
           const ipInfo = await getIpAndCountryViaProxy(currentProxyConfig);
-          ipAddress = ipInfo.ip;
-          ipCountry = ipInfo.country;
-        } else if (!currentProxyConfig) {
+          if (ipInfo.ip) ipAddress = ipInfo.ip;
+          if (ipInfo.country) ipCountry = ipInfo.country;
+        } else {
           console.log("Fetching direct IP/country...");
           const directIp = await getIpAndCountryViaProxy(null);
-          ipAddress = directIp.ip;
-          ipCountry = directIp.country;
+          if (directIp.ip) ipAddress = directIp.ip;
+          if (directIp.country) ipCountry = directIp.country;
         }
-        console.log(`✅ Click succeeded on attempt ${attempt}`);
+        console.log(`Click succeeded on attempt ${attempt}`);
         break;
       } else {
         result = clickResult;
-        console.log(`❌ Attempt ${attempt} failed: ${result.errorMessage}`);
+        console.log(`Attempt ${attempt} failed: ${result.errorMessage}`);
         if (attempt === maxAttempts) {
           console.log(`No more retries, marking as failure`);
         }
       }
     } catch (err) {
       result.errorMessage = err.message;
-      console.error(`❌ Attempt ${attempt} exception: ${err.message}`);
+      console.error(`Attempt ${attempt} exception: ${err.message}`);
       if (attempt === maxAttempts) {
         console.log(`No more retries, marking as failure`);
       }
@@ -560,7 +575,7 @@ clickQueue.process(1, async (job) => {
   }
 
   if (browser) await browser.close();
-  const feedURLFinal = item.url;
+
   const insertClick = db.prepare(`
     INSERT INTO clicks (campaign_id, feed_item_id, proxy_id, status, final_url, ip_address, ip_country, user_agent, browser_type_used, error_message, timestamp)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -570,7 +585,7 @@ clickQueue.process(1, async (job) => {
     item.id,
     proxyRecord?.id || null,
     result.success ? "success" : "failure",
-    result.success ? feedURLFinal : result?.finalUrl,
+    result.success ? item.url : result?.finalUrl,
     ipAddress,
     ipCountry,
     result.userAgent,
@@ -595,6 +610,4 @@ clickQueue.process(1, async (job) => {
   return { success: result.success, itemId: item.id };
 });
 
-console.log(
-  "Click worker started with shadow DOM captcha support, atomic locking, concurrency=1, timezone support, and country dropdown logic"
-);
+console.log("Click worker started");
