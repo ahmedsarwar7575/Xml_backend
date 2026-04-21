@@ -39,32 +39,33 @@ async function getActivePlan(apiKey) {
   return plan;
 }
 
-async function getProxiesByCountry(apiKey, countryCode, quantity = 5) {
+async function getProxiesByCountry(apiKey, countryCode, quantity = 25) {
   const plan = await getActivePlan(apiKey);
   const data = await request(apiKey, "/v2/proxy/list/", {
     plan_id: plan.id,
     mode: "backbone",
-    country_code__in: countryCode.toUpperCase(),
     page: 1,
-    page_size: quantity,
+    page_size: 100,  // fetch many to have enough after filtering
   });
-  const proxies = (data.results || []).map((proxy, index) => ({
+  // Filter by exact country code
+  const filtered = (data.results || []).filter(
+    (proxy) => proxy.country_code === countryCode.toUpperCase()
+  );
+  const proxies = filtered.slice(0, quantity).map((proxy, index) => ({
     index: index + 1,
-    country: countryCode.toUpperCase(),
+    country: proxy.country_code,
     username: proxy.username,
     password: proxy.password,
     host: "p.webshare.io",
     port: 80,
-    proxy_url: `http://${encodeURIComponent(
-      proxy.username
-    )}:${encodeURIComponent(proxy.password)}@p.webshare.io:80`,
+    proxy_url: `http://${encodeURIComponent(proxy.username)}:${encodeURIComponent(proxy.password)}@p.webshare.io:80`,
     ip: proxy.proxy_address || null,
     raw: proxy,
   }));
   return proxies;
 }
 
-async function fetchProxiesForCountry(apiKey, countryCode, quantity = 5) {
+async function fetchProxiesForCountry(apiKey, countryCode, quantity = 25) {
   if (!apiKey) return [];
   try {
     return await getProxiesByCountry(apiKey, countryCode, quantity);
