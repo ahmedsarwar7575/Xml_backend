@@ -271,12 +271,19 @@ async function executeClick(
     const solved = await solveCaptchaOnPage(page, capsolverKey, captchaEnabled);
     if (solved) {
       console.log("   Captcha solved, waiting for navigation...");
+      // Scroll before navigation to avoid context destruction
+      try {
+        await smoothScroll(page);
+      } catch (scrollErr) {
+        console.log("   Scroll failed (likely navigation), continuing...");
+      }
       await page
         .waitForNavigation({ timeout: 15000, waitUntil: "domcontentloaded" })
         .catch(() => {});
+    } else {
+      console.log("   Performing smooth scroll...");
+      await smoothScroll(page);
     }
-    console.log("   Performing smooth scroll...");
-    await smoothScroll(page);
     await page.waitForTimeout(500);
     const finalUrl = page.url();
     const userAgent = await page.evaluate(() => navigator.userAgent);
@@ -359,7 +366,7 @@ clickQueue.process(1, async (job) => {
     WHERE id = (
       SELECT fi.id
       FROM feed_items fi
-      LEFT JOIN clicks c ON c.feed_item_id = fi.id AND c.campaign_id = ?
+      LEFT JOIN clicks c ON c.feed_item_id = fi.id AND CAST(c.campaign_id AS INTEGER) = ?
       WHERE fi.feed_id = ?
         AND c.id IS NULL
         AND (fi.locked_until IS NULL OR fi.locked_until < datetime('now'))
@@ -403,35 +410,41 @@ clickQueue.process(1, async (job) => {
   if (webshareKey && countryToUse) {
     const countryCode = countryNameToCode(countryToUse);
     if (countryCode) {
-      console.log(
-        `Attempting to fetch Webshare proxies for ${countryCode} (${countryToUse})`
-      );
-      const proxies = await fetchProxiesForCountry(webshareKey, countryCode, 25);
-      if (proxies.length > 0) {
-        let idx = webshareProxyIndex.get(campaignId) || 0;
-        const selected = proxies[idx % proxies.length];
-        idx = (idx + 1) % proxies.length;
-        webshareProxyIndex.set(campaignId, idx);
-        proxyConfig = parseProxy(selected.proxy_url);
-        proxyRecord = { id: null, proxy_url: selected.proxy_url };
-        ipAddress = selected.ip;
-        ipCountry = selected.country;
-        proxySource = "webshare";
-        console.log(
-          `✅ Using Webshare proxy ${selected.index}/${
-            proxies.length
-          } for ${countryCode}: ${selected.proxy_url.substring(0, 50)}...`
-        );
+      console.log(`Attempting to fetch Webshare proxies for ${countryCode} (${countryToUse})`);
+      // Fetch at least daily_click_target proxies (min 25)
+      const neededCount = Math.max(campaign.daily_click_target, 25);
+      const allProxies = await fetchProxiesForCountry(webshareKey, countryCode, neededCount);
+      if (allProxies.length > 0) {
+        // Get today's date range (in the configured timezone)
+        const todayStart = new Date(nowInTimezone());
+        todayStart.setHours(0, 0, 0, 0);
+        const todayEnd = new Date(todayStart);
+        todayEnd.setDate(todayStart.getDate() + 1);
+        // Query used IPs for this campaign today
+        const usedIPs = db.prepare(`
+          SELECT DISTINCT ip_address FROM clicks
+          WHERE campaign_id = ? AND ip_address IS NOT NULL AND timestamp BETWEEN ? AND ?
+        `).all(campaignId, todayStart.toISOString(), todayEnd.toISOString()).map(row => row.ip_address);
+        console.log(`Used IPs today for this campaign: ${usedIPs.length}`);
+        // Filter out used IPs
+        const availableProxies = allProxies.filter(p => !usedIPs.includes(p.ip));
+        if (availableProxies.length > 0) {
+          // Pick a random unused proxy
+          const randomIndex = Math.floor(Math.random() * availableProxies.length);
+          const selected = availableProxies[randomIndex];
+          proxyConfig = parseProxy(selected.proxy_url);
+          proxyRecord = { id: null, proxy_url: selected.proxy_url };
+          ipAddress = selected.ip;
+          ipCountry = selected.country;
+          proxySource = "webshare";
+          console.log(`✅ Using Webshare proxy ${selected.index}/${allProxies.length} (IP: ${selected.ip}) for ${countryCode}`);
+        } else {
+          console.log(`❌ No unused Webshare proxies available for ${countryCode}`);
+        }
       } else {
         console.log(`❌ No Webshare proxies available for ${countryCode}`);
       }
-    } else {
-      console.log(
-        `Could not map country "${countryToUse}" to code – skipping auto proxy`
-      );
     }
-  } else {
-    console.log(`Webshare not available or no country to use`);
   }
 
   if (!proxyConfig) {
