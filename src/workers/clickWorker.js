@@ -547,7 +547,7 @@ clickQueue.process(1, async (job) => {
   }
 
   if (browser) await browser.close();
-  const feedURLFinal = url;
+  const feedURLFinal = item.url;
   const insertClick = db.prepare(`
     INSERT INTO clicks (campaign_id, feed_item_id, proxy_id, status, final_url, ip_address, ip_country, user_agent, browser_type_used, error_message, timestamp)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

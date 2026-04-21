@@ -30,3 +30,13 @@ build/
 coverage/
 .nyc_output
 .eslintcache
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+
+data/*.db
+data/*.db-shm
+data/*.db-wal
