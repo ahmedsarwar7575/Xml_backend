@@ -352,6 +352,46 @@ async function getIpAndCountryViaProxy(proxyConfig) {
   }
 }
 
+async function waitForAllRedirects(page, maxWaitMs = 30000) {
+  let lastUrl;
+  try {
+    lastUrl = page.url();
+  } catch (_) {
+    return null;
+  }
+  let stableSince = Date.now();
+  const deadline = Date.now() + maxWaitMs;
+  const STABILITY_MS = 3000;
+
+  while (Date.now() < deadline) {
+    await page.waitForTimeout(500);
+    let currentUrl;
+    try {
+      currentUrl = page.url();
+    } catch (_) {
+      break;
+    }
+    if (currentUrl !== lastUrl) {
+      console.log(`   Redirect: ${lastUrl} -> ${currentUrl}`);
+      lastUrl = currentUrl;
+      stableSince = Date.now();
+      await page
+        .waitForLoadState("domcontentloaded", { timeout: 10000 })
+        .catch(() => {});
+    } else if (Date.now() - stableSince >= STABILITY_MS) {
+      await page
+        .waitForLoadState("networkidle", { timeout: 5000 })
+        .catch(() => {});
+      break;
+    }
+  }
+  try {
+    return page.url();
+  } catch (_) {
+    return lastUrl;
+  }
+}
+
 async function executeClick(
   page,
   url,
@@ -362,23 +402,30 @@ async function executeClick(
   try {
     console.log(`   Navigating to ${url} (timeout ${timeoutMs}ms)`);
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
-    await page.waitForTimeout(5000);
+    await page.waitForTimeout(2000);
+
+    console.log(`   Waiting for all redirects to complete...`);
+    await waitForAllRedirects(page, 30000);
+
     const solved = await solveCaptchaOnPage(page, capsolverKey, captchaEnabled);
     if (solved) {
-      console.log("   Captcha solved, waiting for navigation...");
+      console.log("   Captcha solved, waiting for post-captcha redirects...");
+      await waitForAllRedirects(page, 20000);
       try {
         await smoothScroll(page);
       } catch (_) {}
-      await page
-        .waitForNavigation({ timeout: 15000, waitUntil: "domcontentloaded" })
-        .catch(() => {});
     } else {
       console.log("   Performing smooth scroll...");
       await smoothScroll(page);
     }
-    await page.waitForTimeout(500);
+
+    console.log("   Final redirect check after interactions...");
+    await waitForAllRedirects(page, 10000);
+
+    await page.waitForTimeout(1000);
     const finalUrl = page.url();
     const userAgent = await page.evaluate(() => navigator.userAgent);
+    console.log(`   Final URL after all redirects: ${finalUrl}`);
     return { success: true, finalUrl, userAgent };
   } catch (err) {
     console.error(`   Click execution error: ${err.message}`);
@@ -650,7 +697,7 @@ clickQueue.process(1, async (job) => {
     item.id,
     proxyRecord?.id || null,
     result.success ? "success" : "failure",
-    result.success ? item.url : result?.finalUrl,
+    result.finalUrl || (result.success ? item.url : null),
     ipAddress,
     ipCountry,
     result.userAgent,
@@ -668,11 +715,9 @@ clickQueue.process(1, async (job) => {
   console.log(
     `\nClick recorded: ${result.success ? "SUCCESS" : "FAILURE"} (IP: ${
       ipAddress || "unknown"
-    }, Country: ${
-      ipCountry || "unknown"
-    }, Source: ${proxySource}, Screenshot: ${
-      screenshotPath || "none"
-    }, Duration: ${duration}s)`
+    }, Country: ${ipCountry || "unknown"}, Source: ${proxySource}, FinalURL: ${
+      result.finalUrl || "none"
+    }, Screenshot: ${screenshotPath || "none"}, Duration: ${duration}s)`
   );
   console.log("========== JOB END ==========\n");
   return { success: result.success, itemId: item.id };

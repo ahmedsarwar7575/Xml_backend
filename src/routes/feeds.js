@@ -167,13 +167,23 @@ router.delete("/:id", (req, res) => {
     if (!existing) return res.status(404).json({ error: "Feed not found" });
 
     const deleteFeed = db.transaction((id) => {
-      db.prepare("UPDATE clicks SET feed_item_id = NULL WHERE feed_item_id IN (SELECT id FROM feed_items WHERE feed_id = ?)").run(id);
-      db.prepare("DELETE FROM feed_items WHERE feed_id = ?").run(id);
+      db.prepare(`
+        UPDATE clicks SET feed_item_id = NULL
+        WHERE feed_item_id IN (SELECT id FROM feed_items WHERE feed_id = ?)
+      `).run(id);
+
+      const campaigns = db.prepare("SELECT id FROM campaigns WHERE feed_id = ?").all(id);
+      for (const c of campaigns) {
+        db.prepare("DELETE FROM clicks WHERE campaign_id = ?").run(c.id);
+        db.prepare("DELETE FROM proxies WHERE campaign_id = ?").run(c.id);
+      }
+
       db.prepare("DELETE FROM campaigns WHERE feed_id = ?").run(id);
+      db.prepare("DELETE FROM feed_items WHERE feed_id = ?").run(id);
       db.prepare("DELETE FROM feeds WHERE id = ?").run(id);
     });
-    deleteFeed(feedId);
 
+    deleteFeed(feedId);
     res.json({ message: "Feed deleted" });
   } catch (err) {
     console.error("Feed delete error:", err);
