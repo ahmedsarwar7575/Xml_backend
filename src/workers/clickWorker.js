@@ -38,6 +38,10 @@ function isHeadlessMode() {
   return getSetting("headless_mode") !== "false";
 }
 
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 function getKeywords(campaign) {
   try {
     const kw = JSON.parse(campaign.keywords || "[]");
@@ -149,7 +153,7 @@ async function capsolverTask(apiKey, taskPayload) {
     throw new Error(`Capsolver createTask: ${createData.errorDescription}`);
   const taskId = createData.taskId;
   for (let i = 0; i < 30; i++) {
-    await new Promise((r) => setTimeout(r, 3000));
+    await sleep(3000);
     const resultRes = await fetch("https://api.capsolver.com/getTaskResult", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -463,6 +467,140 @@ function getUsedIpsToday(campaignId) {
     .map((row) => row.ip_address);
 }
 
+async function tryWebshareProxies(
+  webshareKey,
+  countryCode,
+  campaignId,
+  maxAttempts = 2
+) {
+  for (let pass = 1; pass <= maxAttempts; pass++) {
+    console.log(
+      `\n>>> Webshare attempt ${pass}/${maxAttempts} for ${countryCode}`
+    );
+    const allProxies = await fetchProxiesForCountry(
+      webshareKey,
+      countryCode,
+      100
+    );
+
+    const countryMatched = allProxies.filter(
+      (p) => p.country && p.country.toUpperCase() === countryCode.toUpperCase()
+    );
+    console.log(
+      `Webshare returned ${allProxies.length} total, ${countryMatched.length} strictly match ${countryCode}`
+    );
+
+    if (countryMatched.length === 0) {
+      if (pass < maxAttempts) {
+        console.log(
+          `No ${countryCode} proxies returned. Waiting 15s before retry...`
+        );
+        await sleep(15000);
+        continue;
+      }
+      return null;
+    }
+
+    const usedIPs = getUsedIpsToday(campaignId);
+    console.log(`Used IPs today for campaign ${campaignId}: ${usedIPs.length}`);
+
+    const shuffled = [...countryMatched].sort(() => Math.random() - 0.5);
+    const maxProbes = Math.min(shuffled.length, 20);
+
+    for (let i = 0; i < maxProbes; i++) {
+      const candidate = shuffled[i];
+      const candidateConfig = parseProxy(candidate.proxy_url);
+      console.log(
+        `Probing proxy ${i + 1}/${maxProbes} (${candidate.proxyKey})`
+      );
+      const ipInfo = await getIpAndCountryViaProxy(candidateConfig);
+      if (!ipInfo.ip) {
+        console.log(`   Probe failed, trying next`);
+        continue;
+      }
+      if (
+        !ipInfo.country ||
+        ipInfo.country.toUpperCase() !== countryCode.toUpperCase()
+      ) {
+        console.log(
+          `   REJECTED: Exit IP ${ipInfo.ip} is in ${
+            ipInfo.country || "unknown"
+          }, not ${countryCode}`
+        );
+        continue;
+      }
+      const freshUsedIPs = getUsedIpsToday(campaignId);
+      if (freshUsedIPs.includes(ipInfo.ip)) {
+        console.log(
+          `   REJECTED: IP ${ipInfo.ip} already used today (fresh check)`
+        );
+        continue;
+      }
+      console.log(`   ACCEPTED: IP ${ipInfo.ip} in ${ipInfo.country}`);
+      return {
+        proxyConfig: candidateConfig,
+        proxyRecord: { id: null, proxy_url: candidate.proxy_url },
+        ipAddress: ipInfo.ip,
+        ipCountry: ipInfo.country,
+      };
+    }
+
+    if (pass < maxAttempts) {
+      console.log(
+        `No valid ${countryCode} proxy found in ${maxProbes} probes. Waiting 15s before retry...`
+      );
+      await sleep(15000);
+    }
+  }
+  return null;
+}
+
+async function tryManualProxies(campaignId, countryCode) {
+  const manualProxies = db
+    .prepare("SELECT * FROM proxies WHERE campaign_id = ?")
+    .all(campaignId);
+  if (manualProxies.length === 0) return null;
+  console.log(`Trying ${manualProxies.length} manual proxies`);
+
+  const usedIPs = getUsedIpsToday(campaignId);
+  const shuffled = [...manualProxies].sort(() => Math.random() - 0.5);
+
+  for (const mp of shuffled) {
+    const mpConfig = parseProxy(mp.proxy_url);
+    const ipInfo = await getIpAndCountryViaProxy(mpConfig);
+    if (!ipInfo.ip) continue;
+
+    if (countryCode) {
+      if (
+        !ipInfo.country ||
+        ipInfo.country.toUpperCase() !== countryCode.toUpperCase()
+      ) {
+        console.log(
+          `   Manual proxy REJECTED: IP ${ipInfo.ip} in ${ipInfo.country}, not ${countryCode}`
+        );
+        continue;
+      }
+    }
+
+    const freshUsedIPs = getUsedIpsToday(campaignId);
+    if (freshUsedIPs.includes(ipInfo.ip)) {
+      console.log(
+        `   Manual proxy REJECTED: IP ${ipInfo.ip} already used today`
+      );
+      continue;
+    }
+
+    console.log(`   Manual proxy ACCEPTED: IP ${ipInfo.ip}`);
+    return {
+      proxyConfig: mpConfig,
+      proxyRecord: mp,
+      ipAddress: ipInfo.ip,
+      ipCountry: ipInfo.country,
+    };
+  }
+  return null;
+}
+
 clickQueue.process(1, async (job) => {
   const startTime = Date.now();
   console.log("\n========== JOB START ==========");
@@ -534,83 +672,87 @@ clickQueue.process(1, async (job) => {
   } else if (item.country) {
     countryToUse = item.country;
   }
+  const countryCode = countryToUse ? countryNameToCode(countryToUse) : null;
+  const strictCountry = countryToUse && countryToUse !== "Remote";
 
-  if (webshareKey && countryToUse) {
-    const countryCode = countryNameToCode(countryToUse);
-    if (countryCode) {
-      console.log(`Fetching Webshare proxies for ${countryCode}`);
-      const allProxies = await fetchProxiesForCountry(
-        webshareKey,
-        countryCode,
-        100
+  console.log(
+    `Target country: ${countryToUse || "Remote"} (code: ${
+      countryCode || "none"
+    }, strict: ${strictCountry})`
+  );
+
+  if (webshareKey && countryCode) {
+    const result = await tryWebshareProxies(
+      webshareKey,
+      countryCode,
+      campaignId,
+      2
+    );
+    if (result) {
+      proxyConfig = result.proxyConfig;
+      proxyRecord = result.proxyRecord;
+      ipAddress = result.ipAddress;
+      ipCountry = result.ipCountry;
+      proxySource = "webshare";
+    } else {
+      console.log(
+        `Webshare exhausted for ${countryCode}, trying manual proxies`
       );
-
-      if (allProxies.length > 0) {
-        const usedIPs = getUsedIpsToday(campaignId);
-        console.log(
-          `Used IPs today for campaign ${campaignId}: ${usedIPs.length}`
-        );
-
-        const shuffled = [...allProxies].sort(() => Math.random() - 0.5);
-        const maxProbes = Math.min(shuffled.length, 15);
-
-        for (let i = 0; i < maxProbes; i++) {
-          const candidate = shuffled[i];
-          const candidateConfig = parseProxy(candidate.proxy_url);
-          console.log(
-            `Probing proxy ${i + 1}/${maxProbes} (${candidate.proxyKey})`
-          );
-          const ipInfo = await getIpAndCountryViaProxy(candidateConfig);
-          if (!ipInfo.ip) {
-            console.log(`   Probe failed, trying next`);
-            continue;
-          }
-          if (usedIPs.includes(ipInfo.ip)) {
-            console.log(`   IP ${ipInfo.ip} already used today, trying next`);
-            continue;
-          }
-          proxyConfig = candidateConfig;
-          proxyRecord = { id: null, proxy_url: candidate.proxy_url };
-          ipAddress = ipInfo.ip;
-          ipCountry = ipInfo.country || candidate.country;
-          proxySource = "webshare";
-          console.log(`Selected proxy: IP ${ipAddress} (${ipCountry})`);
-          break;
-        }
-
-        if (!proxyConfig) {
-          console.log(`No unused IPs available after ${maxProbes} probes`);
-        }
-      } else {
-        console.log(`No Webshare proxies returned for ${countryCode}`);
-      }
     }
   }
 
   if (!proxyConfig) {
-    const manualProxies = db
-      .prepare("SELECT * FROM proxies WHERE campaign_id = ?")
-      .all(campaignId);
-    if (manualProxies.length > 0) {
-      const usedIPs = getUsedIpsToday(campaignId);
-      const shuffled = [...manualProxies].sort(() => Math.random() - 0.5);
-
-      for (const mp of shuffled) {
-        const mpConfig = parseProxy(mp.proxy_url);
-        const ipInfo = await getIpAndCountryViaProxy(mpConfig);
-        if (!ipInfo.ip) continue;
-        if (usedIPs.includes(ipInfo.ip)) continue;
-        proxyConfig = mpConfig;
-        proxyRecord = mp;
-        ipAddress = ipInfo.ip;
-        ipCountry = ipInfo.country;
-        proxySource = "manual";
-        console.log(`Selected manual proxy: IP ${ipAddress}`);
-        break;
-      }
+    const result = await tryManualProxies(
+      campaignId,
+      strictCountry ? countryCode : null
+    );
+    if (result) {
+      proxyConfig = result.proxyConfig;
+      proxyRecord = result.proxyRecord;
+      ipAddress = result.ipAddress;
+      ipCountry = result.ipCountry;
+      proxySource = "manual";
     }
-    if (!proxyConfig) {
-      console.log(`Falling back to direct connection`);
+  }
+
+  if (!proxyConfig) {
+    if (strictCountry) {
+      console.log(`Checking if direct connection matches ${countryCode}`);
+      const ipInfo = await getIpAndCountryViaProxy(null);
+      if (
+        ipInfo.country &&
+        ipInfo.country.toUpperCase() === countryCode.toUpperCase()
+      ) {
+        const freshUsedIPs = getUsedIpsToday(campaignId);
+        if (!freshUsedIPs.includes(ipInfo.ip)) {
+          console.log(
+            `Direct IP ${ipInfo.ip} matches ${countryCode} - using direct`
+          );
+          ipAddress = ipInfo.ip;
+          ipCountry = ipInfo.country;
+          proxySource = "direct";
+        } else {
+          console.log(
+            `Direct IP ${ipInfo.ip} already used today - SKIPPING CLICK`
+          );
+          db.prepare(
+            "UPDATE feed_items SET locked_until = NULL WHERE id = ?"
+          ).run(item.id);
+          return { skipped: true, reason: "No unused IP available" };
+        }
+      } else {
+        console.log(
+          `Direct IP in ${
+            ipInfo.country || "unknown"
+          } does not match ${countryCode} - SKIPPING CLICK`
+        );
+        db.prepare(
+          "UPDATE feed_items SET locked_until = NULL WHERE id = ?"
+        ).run(item.id);
+        return { skipped: true, reason: `No ${countryCode} proxy available` };
+      }
+    } else {
+      console.log(`No country requirement - using direct connection`);
       proxySource = "direct";
       const ipInfo = await getIpAndCountryViaProxy(null);
       ipAddress = ipInfo.ip;
@@ -618,11 +760,26 @@ clickQueue.process(1, async (job) => {
     }
   }
 
+  if (ipAddress) {
+    const finalCheck = getUsedIpsToday(campaignId);
+    if (finalCheck.includes(ipAddress)) {
+      console.log(
+        `FINAL CHECK FAIL: IP ${ipAddress} was used by another job - SKIPPING`
+      );
+      db.prepare("UPDATE feed_items SET locked_until = NULL WHERE id = ?").run(
+        item.id
+      );
+      return { skipped: true, reason: "IP raced with another job" };
+    }
+  }
+
   const headless = isHeadlessMode();
   const captchaEnabled = isCaptchaEnabled();
   const capsolverKey = getCapsolverKey();
   console.log(
-    `Launching browser (source: ${proxySource}, IP: ${ipAddress || "unknown"})`
+    `Launching browser (source: ${proxySource}, IP: ${
+      ipAddress || "unknown"
+    }, Country: ${ipCountry || "unknown"})`
   );
 
   let browser = null;
@@ -633,57 +790,40 @@ clickQueue.process(1, async (job) => {
     errorMessage: null,
   };
   let screenshotPath = null;
-  const maxAttempts = proxySource !== "direct" ? 2 : 1;
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const usingProxy = proxyConfig && attempt === 1;
-    const currentProxyConfig = usingProxy ? proxyConfig : null;
-    console.log(
-      `\n--- Attempt ${attempt}/${maxAttempts} (${
-        usingProxy ? "proxy" : "direct"
-      }) ---`
+  try {
+    const launchOptions = { headless };
+    if (proxyConfig) launchOptions.proxy = proxyConfig;
+    browser = await chromium.launch(launchOptions);
+    const context = await browser.newContext({
+      ignoreHTTPSErrors: true,
+      userAgent: selectedProfile.userAgent,
+      viewport: selectedProfile.viewport,
+    });
+    const page = await context.newPage();
+
+    const clickResult = await executeClick(
+      page,
+      item.url,
+      capsolverKey,
+      captchaEnabled,
+      120000
     );
-    try {
-      if (browser) await browser.close();
-      const launchOptions = { headless };
-      if (currentProxyConfig) launchOptions.proxy = currentProxyConfig;
-      browser = await chromium.launch(launchOptions);
-      const context = await browser.newContext({
-        ignoreHTTPSErrors: true,
-        userAgent: selectedProfile.userAgent,
-        viewport: selectedProfile.viewport,
-      });
-      const page = await context.newPage();
 
-      const clickResult = await executeClick(
-        page,
-        item.url,
-        capsolverKey,
-        captchaEnabled,
-        120000
-      );
-
-      if (clickResult.success) {
-        result = clickResult;
+    if (clickResult.success) {
+      result = clickResult;
+      screenshotPath = await takeScreenshot(page, campaignId, item.id);
+      console.log(`Click succeeded`);
+    } else {
+      result = clickResult;
+      try {
         screenshotPath = await takeScreenshot(page, campaignId, item.id);
-        if (!ipAddress || attempt > 1) {
-          const ipInfo = await getIpAndCountryViaProxy(currentProxyConfig);
-          if (ipInfo.ip) ipAddress = ipInfo.ip;
-          if (ipInfo.country) ipCountry = ipInfo.country;
-        }
-        console.log(`Click succeeded on attempt ${attempt}`);
-        break;
-      } else {
-        result = clickResult;
-        try {
-          screenshotPath = await takeScreenshot(page, campaignId, item.id);
-        } catch (_) {}
-        console.log(`Attempt ${attempt} failed: ${result.errorMessage}`);
-      }
-    } catch (err) {
-      result.errorMessage = err.message;
-      console.error(`Attempt ${attempt} exception: ${err.message}`);
+      } catch (_) {}
+      console.log(`Click failed: ${result.errorMessage}`);
     }
+  } catch (err) {
+    result.errorMessage = err.message;
+    console.error(`Exception: ${err.message}`);
   }
 
   if (browser) await browser.close();
@@ -715,9 +855,9 @@ clickQueue.process(1, async (job) => {
   console.log(
     `\nClick recorded: ${result.success ? "SUCCESS" : "FAILURE"} (IP: ${
       ipAddress || "unknown"
-    }, Country: ${ipCountry || "unknown"}, Source: ${proxySource}, FinalURL: ${
-      result.finalUrl || "none"
-    }, Screenshot: ${screenshotPath || "none"}, Duration: ${duration}s)`
+    }, Country: ${
+      ipCountry || "unknown"
+    }, Source: ${proxySource}, Duration: ${duration}s)`
   );
   console.log("========== JOB END ==========\n");
   return { success: result.success, itemId: item.id };
