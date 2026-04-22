@@ -384,10 +384,10 @@ clickQueue.process(1, async (job) => {
 
   let proxyConfig = null;
   let proxyRecord = null;
+  let proxyKey = null;
   let ipAddress = null;
   let ipCountry = null;
   let proxySource = "none";
-  let selectedWebshareProxy = null;
 
   const webshareKey = getWebshareApiKey();
   console.log(`Webshare API key present: ${!!webshareKey}`);
@@ -425,16 +425,15 @@ clickQueue.process(1, async (job) => {
 
         const usedProxyKeys = db
           .prepare(
-            `SELECT DISTINCT ip_address FROM clicks WHERE campaign_id = ? AND ip_address IS NOT NULL AND timestamp BETWEEN ? AND ?`
+            `SELECT DISTINCT geolocation FROM clicks WHERE campaign_id = ? AND geolocation IS NOT NULL AND timestamp BETWEEN ? AND ?`
           )
           .all(campaignId, todayStart.toISOString(), todayEnd.toISOString())
-          .map((row) => row.ip_address);
+          .map((row) => row.geolocation);
 
         console.log(`Used proxy keys today: ${usedProxyKeys.length}`);
 
         const availableProxies = allProxies.filter(
-          (p) =>
-            !usedProxyKeys.includes(p.proxyKey) && !usedProxyKeys.includes(p.ip)
+          (p) => !usedProxyKeys.includes(p.proxyKey)
         );
 
         if (availableProxies.length > 0) {
@@ -442,10 +441,9 @@ clickQueue.process(1, async (job) => {
             Math.random() * availableProxies.length
           );
           const selected = availableProxies[randomIndex];
-          selectedWebshareProxy = selected;
           proxyConfig = parseProxy(selected.proxy_url);
           proxyRecord = { id: null, proxy_url: selected.proxy_url };
-          ipAddress = selected.proxyKey;
+          proxyKey = selected.proxyKey;
           ipCountry = selected.country;
           proxySource = "webshare";
           console.log(
@@ -545,18 +543,10 @@ clickQueue.process(1, async (job) => {
       );
       if (clickResult.success) {
         result = clickResult;
-        if (currentProxyConfig) {
-          console.log("Fetching real exit IP from proxy...");
-          const ipInfo = await getIpAndCountryViaProxy(currentProxyConfig);
-          // Store real IP in geolocation for display, keep proxyKey in ipAddress for dedup
-          if (ipInfo.ip) result.realIp = ipInfo.ip;
-          if (ipInfo.country) ipCountry = ipInfo.country;
-        } else {
-          console.log("Fetching direct IP/country...");
-          const directIp = await getIpAndCountryViaProxy(null);
-          if (directIp.ip) ipAddress = directIp.ip;
-          if (directIp.country) ipCountry = directIp.country;
-        }
+        console.log("Fetching real exit IP...");
+        const ipInfo = await getIpAndCountryViaProxy(currentProxyConfig);
+        if (ipInfo.ip) ipAddress = ipInfo.ip;
+        if (ipInfo.country) ipCountry = ipInfo.country;
         console.log(`Click succeeded on attempt ${attempt}`);
         break;
       } else {
@@ -578,23 +568,23 @@ clickQueue.process(1, async (job) => {
   if (browser) await browser.close();
 
   const insertClick = db.prepare(`
-  INSERT INTO clicks (campaign_id, feed_item_id, proxy_id, status, final_url, ip_address, geolocation, ip_country, user_agent, browser_type_used, error_message, timestamp)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`);
-insertClick.run(
-  campaignId,
-  item.id,
-  proxyRecord?.id || null,
-  result.success ? "success" : "failure",
-  result.success ? item.url : result?.finalUrl,
-  ipAddress,              // proxyKey for webshare, real IP for direct/manual
-  result.realIp || null,  // real exit IP stored in geolocation column
-  ipCountry,
-  result.userAgent,
-  selectedProfile.type,
-  result.errorMessage,
-  new Date().toISOString()
-);
+    INSERT INTO clicks (campaign_id, feed_item_id, proxy_id, status, final_url, ip_address, geolocation, ip_country, user_agent, browser_type_used, error_message, timestamp)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  insertClick.run(
+    campaignId,
+    item.id,
+    proxyRecord?.id || null,
+    result.success ? "success" : "failure",
+    result.success ? item.url : result?.finalUrl,
+    ipAddress,
+    proxyKey,
+    ipCountry,
+    result.userAgent,
+    selectedProfile.type,
+    result.errorMessage,
+    new Date().toISOString()
+  );
 
   db.prepare("UPDATE feed_items SET locked_until = NULL WHERE id = ?").run(
     item.id
