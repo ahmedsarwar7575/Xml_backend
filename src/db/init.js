@@ -17,76 +17,76 @@ CREATE TABLE IF NOT EXISTS feeds (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-  CREATE TABLE IF NOT EXISTS campaigns (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    feed_id INTEGER NOT NULL,
-    name TEXT NOT NULL,
-    keywords TEXT NOT NULL DEFAULT '[]',
-    daily_click_target INTEGER NOT NULL,
-    start_time TEXT NOT NULL,
-    end_time TEXT NOT NULL,
-    click_interval_min INTEGER NOT NULL,
-    click_interval_max INTEGER NOT NULL,
-    browser_profile TEXT DEFAULT 'desktop',
-    target_country TEXT DEFAULT 'Remote',
-    hourly_click_limit INTEGER DEFAULT 0,
-    proxy_rotation_strategy TEXT NOT NULL CHECK(proxy_rotation_strategy IN ('round-robin', 'random')),
-    browser_rotation_strategy TEXT NOT NULL CHECK(browser_rotation_strategy IN ('single-per-campaign', 'per-click')),
-    status INTEGER NOT NULL DEFAULT 1,
-    last_proxy_index INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (feed_id) REFERENCES feeds(id) ON DELETE CASCADE
-    
-  );
+CREATE TABLE IF NOT EXISTS campaigns (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  feed_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  keywords TEXT NOT NULL DEFAULT '[]',
+  daily_click_target INTEGER NOT NULL,
+  start_time TEXT NOT NULL,
+  end_time TEXT NOT NULL,
+  click_interval_min INTEGER NOT NULL,
+  click_interval_max INTEGER NOT NULL,
+  browser_profile TEXT DEFAULT 'desktop',
+  target_country TEXT DEFAULT 'Remote',
+  hourly_click_limit INTEGER DEFAULT 0,
+  proxy_rotation_strategy TEXT NOT NULL CHECK(proxy_rotation_strategy IN ('round-robin', 'random')),
+  browser_rotation_strategy TEXT NOT NULL CHECK(browser_rotation_strategy IN ('single-per-campaign', 'per-click')),
+  status INTEGER NOT NULL DEFAULT 1,
+  last_proxy_index INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (feed_id) REFERENCES feeds(id) ON DELETE CASCADE
+);
 
-  CREATE TABLE IF NOT EXISTS proxies (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    campaign_id INTEGER NOT NULL,
-    proxy_url TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
-  );
+CREATE TABLE IF NOT EXISTS proxies (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  campaign_id INTEGER NOT NULL,
+  proxy_url TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
+);
 
-  CREATE TABLE IF NOT EXISTS feed_items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    feed_id INTEGER NOT NULL,
-    title TEXT,
-    description TEXT,
-    url TEXT NOT NULL,
-    locked_until DATETIME,
-    country TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (feed_id) REFERENCES feeds(id) ON DELETE CASCADE
-  );
+CREATE TABLE IF NOT EXISTS feed_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  feed_id INTEGER NOT NULL,
+  title TEXT,
+  description TEXT,
+  url TEXT NOT NULL,
+  locked_until DATETIME,
+  country TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (feed_id) REFERENCES feeds(id) ON DELETE CASCADE
+);
 
-  CREATE TABLE IF NOT EXISTS clicks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    campaign_id INTEGER NOT NULL,
-    feed_item_id INTEGER NOT NULL,
-    proxy_id INTEGER,
-    status TEXT NOT NULL CHECK(status IN ('success', 'failure')),
-    final_url TEXT,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-    ip_address TEXT,
-    ip_country TEXT,
-    user_agent TEXT,
-    error_message TEXT,
-    browser_type_used TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
-    FOREIGN KEY (feed_item_id) REFERENCES feed_items(id) ON DELETE CASCADE,
-    FOREIGN KEY (proxy_id) REFERENCES proxies(id) ON DELETE SET NULL
-  );
+CREATE TABLE IF NOT EXISTS clicks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  campaign_id INTEGER NOT NULL,
+  feed_item_id INTEGER,
+  proxy_id INTEGER,
+  status TEXT NOT NULL CHECK(status IN ('success', 'failure')),
+  final_url TEXT,
+  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+  ip_address TEXT,
+  geolocation TEXT,
+  ip_country TEXT,
+  user_agent TEXT,
+  error_message TEXT,
+  browser_type_used TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
+  FOREIGN KEY (feed_item_id) REFERENCES feed_items(id) ON DELETE SET NULL,
+  FOREIGN KEY (proxy_id) REFERENCES proxies(id) ON DELETE SET NULL
+);
 
-  CREATE TABLE IF NOT EXISTS settings (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    key TEXT UNIQUE NOT NULL,
-    value TEXT,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    admin_username TEXT DEFAULT 'admin',
-    admin_password TEXT DEFAULT 'password',
-    timezone TEXT DEFAULT 'UTC'
-  );
+CREATE TABLE IF NOT EXISTS settings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  key TEXT UNIQUE NOT NULL,
+  value TEXT,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  admin_username TEXT DEFAULT 'admin',
+  admin_password TEXT DEFAULT 'password',
+  timezone TEXT DEFAULT 'UTC'
+);
 `);
 
 db.exec(`
@@ -102,11 +102,16 @@ db.exec(`
     ('capsolver_key', ''),
     ('captcha_enabled', 'false'),
     ('headless_mode', 'true');
-    
 `);
-db.exec("PRAGMA max_page_count = 2147483646;");  // allow larger pages
-db.exec("PRAGMA cache_size = -20000;");         // increase cache
-db.exec("PRAGMA journal_mode = WAL;");          // better concurrency
+
+try {
+  db.exec("ALTER TABLE clicks ADD COLUMN geolocation TEXT;");
+} catch (e) {}
+
+db.exec("PRAGMA max_page_count = 2147483646;");
+db.exec("PRAGMA cache_size = -20000;");
+db.exec("PRAGMA journal_mode = WAL;");
 db.exec("PRAGMA synchronous = NORMAL;");
+
 console.log("Database initialized at", dbPath);
 module.exports = db;
