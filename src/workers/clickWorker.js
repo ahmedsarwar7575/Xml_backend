@@ -1,4 +1,6 @@
 const { chromium } = require("playwright");
+const path = require("path");
+const fs = require("fs");
 const db = require("../db/init");
 const clickQueue = require("../queue/clickQueue");
 const { fetchProxiesForCountry } = require("../services/webshare");
@@ -9,6 +11,11 @@ const {
   getRandomProfile,
 } = require("../utils/browserProfiles");
 const { nowInTimezone } = require("../utils/timezone");
+
+const SCREENSHOT_DIR = path.join(__dirname, "../../screenshots");
+if (!fs.existsSync(SCREENSHOT_DIR)) {
+  fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
+}
 
 function getSetting(key) {
   const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(key);
@@ -105,10 +112,7 @@ async function solveCaptchaOnPage(page, capsolverKey, captchaEnabled) {
   let solved = false;
   for (const captcha of captchas) {
     console.log(`   Detected: ${captcha.type} | siteKey: ${captcha.siteKey}`);
-    if (!captcha.siteKey) {
-      console.log("   No siteKey found, skipping");
-      continue;
-    }
+    if (!captcha.siteKey) continue;
     try {
       if (captcha.type === "turnstile") {
         const solution = await capsolverTask(capsolverKey, {
@@ -116,7 +120,6 @@ async function solveCaptchaOnPage(page, capsolverKey, captchaEnabled) {
           websiteURL: pageUrl,
           websiteKey: captcha.siteKey,
         });
-        console.log("   Turnstile solved, injecting token...");
         await page.evaluate((token) => {
           const widget = document.querySelector(".cf-turnstile");
           if (widget && widget.shadowRoot) {
@@ -145,7 +148,6 @@ async function solveCaptchaOnPage(page, capsolverKey, captchaEnabled) {
           websiteURL: pageUrl,
           websiteKey: captcha.siteKey,
         });
-        console.log("   hCaptcha solved, injecting token...");
         await page.evaluate((token) => {
           const input = document.querySelector('[name="h-captcha-response"]');
           if (input) input.value = token;
@@ -159,7 +161,6 @@ async function solveCaptchaOnPage(page, capsolverKey, captchaEnabled) {
           websiteURL: pageUrl,
           websiteKey: captcha.siteKey,
         });
-        console.log("   reCAPTCHA solved, injecting token...");
         await page.evaluate((token) => {
           const input = document.querySelector('[name="g-recaptcha-response"]');
           if (input) input.value = token;
@@ -203,7 +204,6 @@ function parseProxy(proxyUrl) {
         password: url.password || undefined,
       };
     } catch (e) {
-      console.error(`Invalid URL format: ${proxyUrl}`, e.message);
       return null;
     }
   }
@@ -222,16 +222,15 @@ function parseProxy(proxyUrl) {
     const [ip, port] = parts;
     return { server: `http://${ip}:${port}` };
   }
-  console.error(`Unrecognized proxy format: ${proxyUrl}`);
   return null;
 }
 
 async function getIpAndCountryViaProxy(proxyConfig) {
+  let browser = null;
   try {
-    const browser = await chromium.launch({
-      headless: true,
-      proxy: proxyConfig,
-    });
+    const launchOptions = { headless: true };
+    if (proxyConfig) launchOptions.proxy = proxyConfig;
+    browser = await chromium.launch(launchOptions);
     const page = await browser.newPage();
     await page.goto("https://api.ipify.org?format=json", {
       waitUntil: "domcontentloaded",
@@ -248,7 +247,8 @@ async function getIpAndCountryViaProxy(proxyConfig) {
     await browser.close();
     return { ip, country: geo.countryCode };
   } catch (err) {
-    console.error("Failed to get IP/country via proxy:", err.message);
+    console.error("Failed to get IP/country:", err.message);
+    if (browser) await browser.close().catch(() => {});
     return { ip: null, country: null };
   }
 }
@@ -269,9 +269,7 @@ async function executeClick(
       console.log("   Captcha solved, waiting for navigation...");
       try {
         await smoothScroll(page);
-      } catch (scrollErr) {
-        console.log("   Scroll failed (likely navigation), continuing...");
-      }
+      } catch (_) {}
       await page
         .waitForNavigation({ timeout: 15000, waitUntil: "domcontentloaded" })
         .catch(() => {});
@@ -287,6 +285,36 @@ async function executeClick(
     console.error(`   Click execution error: ${err.message}`);
     return { success: false, errorMessage: err.message };
   }
+}
+
+async function takeScreenshot(page, campaignId, itemId) {
+  try {
+    const ts = Date.now();
+    const filename = `click_${campaignId}_${itemId}_${ts}.png`;
+    const fullPath = path.join(SCREENSHOT_DIR, filename);
+    await page.screenshot({ path: fullPath, fullPage: false });
+    const relPath = path.join("screenshots", filename).replace(/\\/g, "/");
+    console.log(`   Screenshot saved: ${relPath}`);
+    return relPath;
+  } catch (err) {
+    console.error(`   Screenshot failed: ${err.message}`);
+    return null;
+  }
+}
+
+function getUsedIpsToday(campaignId) {
+  const todayStart = new Date(nowInTimezone());
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date(todayStart);
+  todayEnd.setDate(todayStart.getDate() + 1);
+  return db
+    .prepare(
+      `SELECT DISTINCT ip_address FROM clicks
+       WHERE campaign_id = ? AND ip_address IS NOT NULL AND ip_address != ''
+       AND timestamp BETWEEN ? AND ?`
+    )
+    .all(campaignId, todayStart.toISOString(), todayEnd.toISOString())
+    .map((row) => row.ip_address);
 }
 
 clickQueue.process(1, async (job) => {
@@ -305,13 +333,11 @@ clickQueue.process(1, async (job) => {
   console.log(`Campaign: ${campaign.name} (Feed ID: ${campaign.feed_id})`);
 
   let selectedProfile;
-  if (campaign.browser_profile === "desktop") {
+  if (campaign.browser_profile === "desktop")
     selectedProfile = getRandomDesktopProfile();
-  } else if (campaign.browser_profile === "mobile") {
+  else if (campaign.browser_profile === "mobile")
     selectedProfile = getRandomMobileProfile();
-  } else {
-    selectedProfile = getRandomProfile();
-  }
+  else selectedProfile = getRandomProfile();
   console.log(`Selected browser profile: ${selectedProfile.type}`);
 
   const now = nowInTimezone();
@@ -322,14 +348,9 @@ clickQueue.process(1, async (job) => {
   const [endHour, endMinute] = campaign.end_time.split(":");
   end.setHours(parseInt(endHour), parseInt(endMinute), 0, 0);
   if (now < start || now > end) {
-    console.log(
-      `Outside active hours (now=${now.toLocaleTimeString()}, window=${
-        campaign.start_time
-      }-${campaign.end_time}) - skipping`
-    );
+    console.log(`Outside active hours - skipping`);
     return { skipped: true, reason: "Outside hours" };
   }
-  console.log(`Active hours OK: now=${now.toLocaleTimeString()}`);
 
   if (campaign.hourly_click_limit && campaign.hourly_click_limit > 0) {
     const hourStart = new Date(now);
@@ -342,32 +363,24 @@ clickQueue.process(1, async (job) => {
       )
       .get(campaignId, hourStart.toISOString(), hourEnd.toISOString()).count;
     if (clicksThisHour >= campaign.hourly_click_limit) {
-      console.log(
-        `Hourly limit reached (${clicksThisHour}/${campaign.hourly_click_limit}) - skipping`
-      );
+      console.log(`Hourly limit reached - skipping`);
       return { skipped: true, reason: "Hourly limit exceeded" };
     }
-    console.log(
-      `Hourly limit OK: ${clicksThisHour}/${campaign.hourly_click_limit} used this hour`
-    );
   }
 
   const claimStmt = db.prepare(`
     UPDATE feed_items
     SET locked_until = datetime('now', '+10 minutes')
     WHERE id = (
-      SELECT fi.id
-      FROM feed_items fi
+      SELECT fi.id FROM feed_items fi
       WHERE fi.feed_id = ?
         AND (fi.locked_until IS NULL OR fi.locked_until < datetime('now'))
         AND fi.url NOT IN (
-          SELECT fi2.url
-          FROM feed_items fi2
+          SELECT fi2.url FROM feed_items fi2
           INNER JOIN clicks c ON c.feed_item_id = fi2.id
           WHERE c.campaign_id = ? AND c.status = 'success'
         )
-      ORDER BY fi.id ASC
-      LIMIT 1
+      ORDER BY fi.id ASC LIMIT 1
     )
     RETURNING id, url, title, country
   `);
@@ -376,86 +389,72 @@ clickQueue.process(1, async (job) => {
     console.log(`No items left for campaign ${campaignId}`);
     return { skipped: true, reason: "No items" };
   }
-  console.log(
-    `Claimed item ID ${item.id}: ${item.title.substring(0, 60)} (Country: ${
-      item.country || "unknown"
-    })`
-  );
+  console.log(`Claimed item ID ${item.id}: ${item.title.substring(0, 60)}`);
 
   let proxyConfig = null;
   let proxyRecord = null;
-  let proxyKey = null;
   let ipAddress = null;
   let ipCountry = null;
   let proxySource = "none";
+  let selectedProxyObj = null;
 
   const webshareKey = getWebshareApiKey();
-  console.log(`Webshare API key present: ${!!webshareKey}`);
-
   let countryToUse = null;
   if (campaign.target_country && campaign.target_country !== "Remote") {
     countryToUse = campaign.target_country;
-    console.log(`Campaign has fixed country: ${countryToUse}`);
   } else if (item.country) {
     countryToUse = item.country;
-    console.log(`Using feed item country: ${countryToUse}`);
-  } else {
-    console.log(
-      `No country specified (campaign: ${campaign.target_country}, feed: ${item.country})`
-    );
   }
 
   if (webshareKey && countryToUse) {
     const countryCode = countryNameToCode(countryToUse);
     if (countryCode) {
-      console.log(
-        `Attempting to fetch Webshare proxies for ${countryCode} (${countryToUse})`
-      );
-      const neededCount = Math.max(campaign.daily_click_target, 25);
+      console.log(`Fetching Webshare proxies for ${countryCode}`);
       const allProxies = await fetchProxiesForCountry(
         webshareKey,
         countryCode,
-        neededCount
+        100
       );
+
       if (allProxies.length > 0) {
-        const todayStart = new Date(nowInTimezone());
-        todayStart.setHours(0, 0, 0, 0);
-        const todayEnd = new Date(todayStart);
-        todayEnd.setDate(todayStart.getDate() + 1);
-
-        const usedProxyKeys = db
-          .prepare(
-            `SELECT DISTINCT geolocation FROM clicks WHERE campaign_id = ? AND geolocation IS NOT NULL AND timestamp BETWEEN ? AND ?`
-          )
-          .all(campaignId, todayStart.toISOString(), todayEnd.toISOString())
-          .map((row) => row.geolocation);
-
-        console.log(`Used proxy keys today: ${usedProxyKeys.length}`);
-
-        const availableProxies = allProxies.filter(
-          (p) => !usedProxyKeys.includes(p.proxyKey)
+        const usedIPs = getUsedIpsToday(campaignId);
+        console.log(
+          `Used IPs today for campaign ${campaignId}: ${usedIPs.length}`
         );
 
-        if (availableProxies.length > 0) {
-          const randomIndex = Math.floor(
-            Math.random() * availableProxies.length
+        const shuffled = [...allProxies].sort(() => Math.random() - 0.5);
+        const maxProbes = Math.min(shuffled.length, 15);
+
+        for (let i = 0; i < maxProbes; i++) {
+          const candidate = shuffled[i];
+          const candidateConfig = parseProxy(candidate.proxy_url);
+          console.log(
+            `Probing proxy ${i + 1}/${maxProbes} (${candidate.proxyKey})`
           );
-          const selected = availableProxies[randomIndex];
-          proxyConfig = parseProxy(selected.proxy_url);
-          proxyRecord = { id: null, proxy_url: selected.proxy_url };
-          proxyKey = selected.proxyKey;
-          ipCountry = selected.country;
+          const ipInfo = await getIpAndCountryViaProxy(candidateConfig);
+          if (!ipInfo.ip) {
+            console.log(`   Probe failed, trying next`);
+            continue;
+          }
+          if (usedIPs.includes(ipInfo.ip)) {
+            console.log(`   IP ${ipInfo.ip} already used today, trying next`);
+            continue;
+          }
+          proxyConfig = candidateConfig;
+          proxyRecord = { id: null, proxy_url: candidate.proxy_url };
+          ipAddress = ipInfo.ip;
+          ipCountry = ipInfo.country || candidate.country;
+          selectedProxyObj = candidate;
           proxySource = "webshare";
-          console.log(
-            `Using Webshare proxy ${selected.index}/${allProxies.length} (key: ${selected.proxyKey}) for ${countryCode}`
-          );
-        } else {
-          console.log(
-            `No unused Webshare proxies available for ${countryCode}`
-          );
+          console.log(`Selected proxy: IP ${ipAddress} (${ipCountry})`);
+          break;
+        }
+
+        if (!proxyConfig) {
+          console.log(`No unused IPs available after ${maxProbes} probes`);
         }
       } else {
-        console.log(`No Webshare proxies available for ${countryCode}`);
+        console.log(`No Webshare proxies returned for ${countryCode}`);
       }
     }
   }
@@ -464,45 +463,39 @@ clickQueue.process(1, async (job) => {
     const manualProxies = db
       .prepare("SELECT * FROM proxies WHERE campaign_id = ?")
       .all(campaignId);
-    console.log(`Manual proxies found: ${manualProxies.length}`);
     if (manualProxies.length > 0) {
-      let selectedProxy = null;
-      if (campaign.proxy_rotation_strategy === "round-robin") {
-        const idx = campaign.last_proxy_index % manualProxies.length;
-        selectedProxy = manualProxies[idx];
-        db.prepare(
-          "UPDATE campaigns SET last_proxy_index = last_proxy_index + 1 WHERE id = ?"
-        ).run(campaignId);
-        console.log(
-          `Round-robin: selected index ${idx} of ${manualProxies.length}`
-        );
-      } else {
-        const randomIdx = Math.floor(Math.random() * manualProxies.length);
-        selectedProxy = manualProxies[randomIdx];
-        console.log(
-          `Random: selected index ${randomIdx} of ${manualProxies.length}`
-        );
+      const usedIPs = getUsedIpsToday(campaignId);
+      const shuffled = [...manualProxies].sort(() => Math.random() - 0.5);
+
+      for (const mp of shuffled) {
+        const mpConfig = parseProxy(mp.proxy_url);
+        const ipInfo = await getIpAndCountryViaProxy(mpConfig);
+        if (!ipInfo.ip) continue;
+        if (usedIPs.includes(ipInfo.ip)) continue;
+        proxyConfig = mpConfig;
+        proxyRecord = mp;
+        ipAddress = ipInfo.ip;
+        ipCountry = ipInfo.country;
+        proxySource = "manual";
+        console.log(`Selected manual proxy: IP ${ipAddress}`);
+        break;
       }
-      proxyConfig = parseProxy(selectedProxy.proxy_url);
-      proxyRecord = selectedProxy;
-      proxySource = "manual";
-      console.log(
-        `Using manual proxy: ${selectedProxy.proxy_url.substring(0, 50)}...`
-      );
-    } else {
-      console.log(`No manual proxies configured, using direct connection`);
+    }
+    if (!proxyConfig) {
+      console.log(`Falling back to direct connection`);
       proxySource = "direct";
+      const ipInfo = await getIpAndCountryViaProxy(null);
+      ipAddress = ipInfo.ip;
+      ipCountry = ipInfo.country;
     }
   }
 
   const headless = isHeadlessMode();
   const captchaEnabled = isCaptchaEnabled();
   const capsolverKey = getCapsolverKey();
-  console.log(`Headless mode: ${headless}`);
   console.log(
-    `Captcha solving enabled: ${captchaEnabled}, Capsolver key present: ${!!capsolverKey}`
+    `Launching browser (source: ${proxySource}, IP: ${ipAddress || "unknown"})`
   );
-  console.log(`Launching browser with proxy: ${proxySource}`);
 
   let browser = null;
   let result = {
@@ -511,22 +504,22 @@ clickQueue.process(1, async (job) => {
     userAgent: null,
     errorMessage: null,
   };
+  let screenshotPath = null;
   const maxAttempts = proxySource !== "direct" ? 2 : 1;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const usingProxy = proxyConfig && attempt === 1 ? true : false;
+    const usingProxy = proxyConfig && attempt === 1;
     const currentProxyConfig = usingProxy ? proxyConfig : null;
     console.log(
-      `\n--- Attempt ${attempt}/${maxAttempts} (using ${
+      `\n--- Attempt ${attempt}/${maxAttempts} (${
         usingProxy ? "proxy" : "direct"
       }) ---`
     );
     try {
       if (browser) await browser.close();
-      browser = await chromium.launch({
-        headless,
-        proxy: currentProxyConfig || undefined,
-      });
+      const launchOptions = { headless };
+      if (currentProxyConfig) launchOptions.proxy = currentProxyConfig;
+      browser = await chromium.launch(launchOptions);
       const context = await browser.newContext({
         ignoreHTTPSErrors: true,
         userAgent: selectedProfile.userAgent,
@@ -541,34 +534,34 @@ clickQueue.process(1, async (job) => {
         captchaEnabled,
         120000
       );
+
       if (clickResult.success) {
         result = clickResult;
-        console.log("Fetching real exit IP...");
-        const ipInfo = await getIpAndCountryViaProxy(currentProxyConfig);
-        if (ipInfo.ip) ipAddress = ipInfo.ip;
-        if (ipInfo.country) ipCountry = ipInfo.country;
+        screenshotPath = await takeScreenshot(page, campaignId, item.id);
+        if (!ipAddress || attempt > 1) {
+          const ipInfo = await getIpAndCountryViaProxy(currentProxyConfig);
+          if (ipInfo.ip) ipAddress = ipInfo.ip;
+          if (ipInfo.country) ipCountry = ipInfo.country;
+        }
         console.log(`Click succeeded on attempt ${attempt}`);
         break;
       } else {
         result = clickResult;
+        try {
+          screenshotPath = await takeScreenshot(page, campaignId, item.id);
+        } catch (_) {}
         console.log(`Attempt ${attempt} failed: ${result.errorMessage}`);
-        if (attempt === maxAttempts) {
-          console.log(`No more retries, marking as failure`);
-        }
       }
     } catch (err) {
       result.errorMessage = err.message;
       console.error(`Attempt ${attempt} exception: ${err.message}`);
-      if (attempt === maxAttempts) {
-        console.log(`No more retries, marking as failure`);
-      }
     }
   }
 
   if (browser) await browser.close();
 
   const insertClick = db.prepare(`
-    INSERT INTO clicks (campaign_id, feed_item_id, proxy_id, status, final_url, ip_address, geolocation, ip_country, user_agent, browser_type_used, error_message, timestamp)
+    INSERT INTO clicks (campaign_id, feed_item_id, proxy_id, status, final_url, ip_address, ip_country, user_agent, browser_type_used, error_message, screenshot_path, timestamp)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   insertClick.run(
@@ -578,11 +571,11 @@ clickQueue.process(1, async (job) => {
     result.success ? "success" : "failure",
     result.success ? item.url : result?.finalUrl,
     ipAddress,
-    proxyKey,
     ipCountry,
     result.userAgent,
     selectedProfile.type,
     result.errorMessage,
+    screenshotPath,
     new Date().toISOString()
   );
 
@@ -594,8 +587,10 @@ clickQueue.process(1, async (job) => {
   console.log(
     `\nClick recorded: ${result.success ? "SUCCESS" : "FAILURE"} (IP: ${
       ipAddress || "unknown"
-    }, Country: ${ipCountry || "unknown"}, Source: ${proxySource}, Browser: ${
-      selectedProfile.type
+    }, Country: ${
+      ipCountry || "unknown"
+    }, Source: ${proxySource}, Screenshot: ${
+      screenshotPath || "none"
     }, Duration: ${duration}s)`
   );
   console.log("========== JOB END ==========\n");

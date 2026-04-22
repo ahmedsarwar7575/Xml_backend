@@ -41,26 +41,45 @@ async function getActivePlan(apiKey) {
 
 async function getProxiesByCountry(apiKey, countryCode, quantity = 25) {
   const plan = await getActivePlan(apiKey);
-  const data = await request(apiKey, "/v2/proxy/list/", {
-    plan_id: plan.id,
-    mode: "backbone",
-    page: 1,
-    page_size: 100,  // fetch many to have enough after filtering
-  });
-  // Filter by exact country code
-  const filtered = (data.results || []).filter(
+  const allResults = [];
+  let page = 1;
+  const pageSize = 100;
+
+  while (true) {
+    const data = await request(apiKey, "/v2/proxy/list/", {
+      plan_id: plan.id,
+      mode: "backbone",
+      page,
+      page_size: pageSize,
+      country_code: countryCode.toUpperCase(),
+    });
+    const results = data.results || [];
+    allResults.push(...results);
+    if (!data.next || results.length < pageSize) break;
+    page++;
+    if (page > 50) break;
+  }
+
+  console.log(
+    `Webshare: fetched ${allResults.length} total ${countryCode} proxies across ${page} page(s)`
+  );
+
+  const filtered = allResults.filter(
     (proxy) => proxy.country_code === countryCode.toUpperCase()
   );
-  const proxies = filtered.slice(0, quantity).map((proxy, index) => ({
+
+  const proxies = filtered.map((proxy, index) => ({
     index: index + 1,
     country: proxy.country_code,
     username: proxy.username,
     password: proxy.password,
     host: "p.webshare.io",
     port: 80,
-    proxy_url: `http://${encodeURIComponent(proxy.username)}:${encodeURIComponent(proxy.password)}@p.webshare.io:80`,
+    proxy_url: `http://${encodeURIComponent(
+      proxy.username
+    )}:${encodeURIComponent(proxy.password)}@p.webshare.io:80`,
     ip: proxy.proxy_address || null,
-    proxyKey: proxy.username,   // ← unique key for deduplication
+    proxyKey: proxy.username,
     raw: proxy,
   }));
   return proxies;

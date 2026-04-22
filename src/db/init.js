@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS clicks (
   ip_address TEXT,
   geolocation TEXT,
   ip_country TEXT,
+  screenshot_path TEXT,
   user_agent TEXT,
   error_message TEXT,
   browser_type_used TEXT,

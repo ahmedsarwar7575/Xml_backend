@@ -78,7 +78,7 @@ router.get("/logs/recent", (req, res) => {
       .prepare(
         `
       SELECT cl.id, cl.status, cl.final_url, cl.timestamp, cl.error_message, 
-             cl.ip_address, cl.ip_country, cl.browser_type_used,
+             cl.ip_address, cl.ip_country, cl.browser_type_used, screenshot_path,
              c.name as campaign_name, fi.title as item_title
       FROM clicks cl
       LEFT JOIN campaigns c ON cl.campaign_id = c.id
