@@ -38,6 +38,105 @@ function isHeadlessMode() {
   return getSetting("headless_mode") !== "false";
 }
 
+function getKeywords(campaign) {
+  try {
+    const kw = JSON.parse(campaign.keywords || "[]");
+    return Array.isArray(kw)
+      ? kw.filter((k) => k && k.trim()).map((k) => k.trim().toLowerCase())
+      : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function pickKeywordForRotation(campaignId, keywords) {
+  if (!keywords.length) return null;
+  const todayStart = new Date(nowInTimezone());
+  todayStart.setHours(0, 0, 0, 0);
+  const totalClicksToday = db
+    .prepare(
+      `SELECT COUNT(*) as count FROM clicks WHERE campaign_id = ? AND timestamp >= ?`
+    )
+    .get(campaignId, todayStart.toISOString()).count;
+  const idx = totalClicksToday % keywords.length;
+  return keywords[idx];
+}
+
+function claimNextItem(campaignId, feedId, campaign) {
+  const keywords = getKeywords(campaign);
+  const activeKeyword = pickKeywordForRotation(campaignId, keywords);
+  console.log(
+    `Active keyword for this click: ${activeKeyword || "(none - all items)"}`
+  );
+
+  let baseSql = `
+    UPDATE feed_items
+    SET locked_until = datetime('now', '+10 minutes')
+    WHERE id = (
+      SELECT fi.id FROM feed_items fi
+      LEFT JOIN (
+        SELECT feed_item_id, COUNT(*) as click_count, MAX(timestamp) as last_clicked
+        FROM clicks
+        WHERE campaign_id = ?
+          AND timestamp >= datetime('now', 'start of day')
+          AND status = 'success'
+        GROUP BY feed_item_id
+      ) c ON c.feed_item_id = fi.id
+      WHERE fi.feed_id = ?
+        AND (fi.locked_until IS NULL OR fi.locked_until < datetime('now'))
+  `;
+
+  const params = [campaignId, feedId];
+
+  if (activeKeyword) {
+    baseSql += ` AND (LOWER(fi.title) LIKE ? OR LOWER(fi.description) LIKE ?)`;
+    const pattern = `%${activeKeyword}%`;
+    params.push(pattern, pattern);
+  }
+
+  baseSql += `
+      ORDER BY COALESCE(c.click_count, 0) ASC,
+               COALESCE(c.last_clicked, '1970-01-01') ASC,
+               fi.id ASC
+      LIMIT 1
+    )
+    RETURNING id, url, title, country
+  `;
+
+  let item = db.prepare(baseSql).get(...params);
+
+  if (!item && activeKeyword) {
+    console.log(
+      `No items match keyword "${activeKeyword}", falling back to any item`
+    );
+    const fallbackSql = `
+      UPDATE feed_items
+      SET locked_until = datetime('now', '+10 minutes')
+      WHERE id = (
+        SELECT fi.id FROM feed_items fi
+        LEFT JOIN (
+          SELECT feed_item_id, COUNT(*) as click_count, MAX(timestamp) as last_clicked
+          FROM clicks
+          WHERE campaign_id = ?
+            AND timestamp >= datetime('now', 'start of day')
+            AND status = 'success'
+          GROUP BY feed_item_id
+        ) c ON c.feed_item_id = fi.id
+        WHERE fi.feed_id = ?
+          AND (fi.locked_until IS NULL OR fi.locked_until < datetime('now'))
+        ORDER BY COALESCE(c.click_count, 0) ASC,
+                 COALESCE(c.last_clicked, '1970-01-01') ASC,
+                 fi.id ASC
+        LIMIT 1
+      )
+      RETURNING id, url, title, country
+    `;
+    item = db.prepare(fallbackSql).get(campaignId, feedId);
+  }
+
+  return item;
+}
+
 async function capsolverTask(apiKey, taskPayload) {
   if (!apiKey) throw new Error("Capsolver API key missing");
   const createRes = await fetch("https://api.capsolver.com/createTask", {
@@ -368,25 +467,9 @@ clickQueue.process(1, async (job) => {
     }
   }
 
-  const claimStmt = db.prepare(`
-    UPDATE feed_items
-    SET locked_until = datetime('now', '+10 minutes')
-    WHERE id = (
-      SELECT fi.id FROM feed_items fi
-      WHERE fi.feed_id = ?
-        AND (fi.locked_until IS NULL OR fi.locked_until < datetime('now'))
-        AND fi.url NOT IN (
-          SELECT fi2.url FROM feed_items fi2
-          INNER JOIN clicks c ON c.feed_item_id = fi2.id
-          WHERE c.campaign_id = ? AND c.status = 'success'
-        )
-      ORDER BY fi.id ASC LIMIT 1
-    )
-    RETURNING id, url, title, country
-  `);
-  const item = claimStmt.get(campaign.feed_id, campaignId);
+  const item = claimNextItem(campaignId, campaign.feed_id, campaign);
   if (!item) {
-    console.log(`No items left for campaign ${campaignId}`);
+    console.log(`No items available for campaign ${campaignId}`);
     return { skipped: true, reason: "No items" };
   }
   console.log(`Claimed item ID ${item.id}: ${item.title.substring(0, 60)}`);
@@ -396,7 +479,6 @@ clickQueue.process(1, async (job) => {
   let ipAddress = null;
   let ipCountry = null;
   let proxySource = "none";
-  let selectedProxyObj = null;
 
   const webshareKey = getWebshareApiKey();
   let countryToUse = null;
@@ -444,7 +526,6 @@ clickQueue.process(1, async (job) => {
           proxyRecord = { id: null, proxy_url: candidate.proxy_url };
           ipAddress = ipInfo.ip;
           ipCountry = ipInfo.country || candidate.country;
-          selectedProxyObj = candidate;
           proxySource = "webshare";
           console.log(`Selected proxy: IP ${ipAddress} (${ipCountry})`);
           break;
