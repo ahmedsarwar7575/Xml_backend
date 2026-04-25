@@ -10,7 +10,7 @@ module.exports = {
         NODE_ENV: "production",
         PORT: 3000,
       },
-      max_memory_restart: "5G",
+      max_memory_restart: "5120M",
       watch: false,
       ignore_watch: ["node_modules", "data", "screenshots", "logs"],
       error_file: "./logs/err.log",
@@ -30,7 +30,7 @@ module.exports = {
       env: {
         NODE_ENV: "production",
       },
-      max_memory_restart: "7G",
+      max_memory_restart: "7168M",
       watch: false,
       ignore_watch: ["node_modules", "data", "screenshots", "logs"],
       error_file: "./logs/worker-err.log",
@@ -50,7 +50,7 @@ module.exports = {
       env: {
         NODE_ENV: "production",
       },
-      max_memory_restart: "1.8G",
+      max_memory_restart: "1800M",
       watch: false,
       ignore_watch: ["node_modules", "data", "screenshots", "logs"],
       error_file: "./logs/scheduler-err.log",
