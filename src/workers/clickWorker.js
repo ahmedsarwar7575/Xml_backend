@@ -5,6 +5,8 @@ const db = require("../db/init");
 const clickQueue = require("../queue/clickQueue");
 const proxyProvider = require("../services/proxyProvider");
 const { countryNameToCode } = require("../utils/countryMapping");
+const memoryManager = require("../utils/memoryManager");
+
 const {
   getRandomDesktopProfile,
   getRandomMobileProfile,
@@ -16,7 +18,7 @@ const SCREENSHOT_DIR = path.join(__dirname, "../../screenshots");
 if (!fs.existsSync(SCREENSHOT_DIR)) {
   fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
 }
-
+memoryManager.startMemoryMonitor();
 function getSetting(key) {
   const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(key);
   return row ? row.value : null;
@@ -632,6 +634,7 @@ async function tryManualProxies(campaignId, countryCode) {
 }
 
 clickQueue.process(1, async (job) => {
+  memoryManager.checkMemoryUsage();
   const startTime = Date.now();
   console.log("\n========== JOB START ==========");
   console.log(`Processing job for campaign ${job.data.campaignId}`);
@@ -888,6 +891,7 @@ clickQueue.process(1, async (job) => {
       ipCountry || "unknown"
     }, Source: ${proxySource}, Duration: ${duration}s)`
   );
+  memoryManager.checkMemoryUsage();
   console.log("========== JOB END ==========\n");
   return { success: result.success, itemId: item.id };
 });
