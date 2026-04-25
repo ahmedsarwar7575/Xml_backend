@@ -3,7 +3,7 @@ const path = require("path");
 const fs = require("fs");
 const db = require("../db/init");
 const clickQueue = require("../queue/clickQueue");
-const { fetchProxiesForCountry } = require("../services/webshare");
+const proxyProvider = require("../services/proxyProvider");
 const { countryNameToCode } = require("../utils/countryMapping");
 const {
   getRandomDesktopProfile,
@@ -28,10 +28,6 @@ function isCaptchaEnabled() {
 
 function getCapsolverKey() {
   return getSetting("capsolver_key");
-}
-
-function getWebshareApiKey() {
-  return getSetting("webshare_api_key");
 }
 
 function isHeadlessMode() {
@@ -303,8 +299,8 @@ function parseProxy(proxyUrl) {
       const url = new URL(proxyUrl);
       return {
         server: `${url.protocol}//${url.hostname}:${url.port}`,
-        username: url.username || undefined,
-        password: url.password || undefined,
+        username: url.username ? decodeURIComponent(url.username) : undefined,
+        password: url.password ? decodeURIComponent(url.password) : undefined,
       };
     } catch (e) {
       return null;
@@ -326,6 +322,22 @@ function parseProxy(proxyUrl) {
     return { server: `http://${ip}:${port}` };
   }
   return null;
+}
+
+function buildProxyConfigFromCandidate(candidate) {
+  if (
+    candidate.host &&
+    candidate.port &&
+    candidate.username &&
+    candidate.password
+  ) {
+    return {
+      server: `http://${candidate.host}:${candidate.port}`,
+      username: candidate.username,
+      password: candidate.password,
+    };
+  }
+  return parseProxy(candidate.proxy_url);
 }
 
 async function getIpAndCountryViaProxy(proxyConfig) {
@@ -467,91 +479,104 @@ function getUsedIpsToday(campaignId) {
     .map((row) => row.ip_address);
 }
 
-async function tryWebshareProxies(
-  webshareKey,
-  countryCode,
-  campaignId,
-  maxAttempts = 2
-) {
-  for (let pass = 1; pass <= maxAttempts; pass++) {
-    console.log(
-      `\n>>> Webshare attempt ${pass}/${maxAttempts} for ${countryCode}`
-    );
-    const allProxies = await fetchProxiesForCountry(
-      webshareKey,
-      countryCode,
-      100
-    );
+async function tryProviderProxies(providerName, countryCode, campaignId) {
+  console.log(`\n>>> Trying ${providerName} for ${countryCode}`);
+  const allProxies = await proxyProvider.fetchProxiesFromProvider(
+    providerName,
+    countryCode,
+    20
+  );
 
-    const countryMatched = allProxies.filter(
-      (p) => p.country && p.country.toUpperCase() === countryCode.toUpperCase()
-    );
-    console.log(
-      `Webshare returned ${allProxies.length} total, ${countryMatched.length} strictly match ${countryCode}`
-    );
-
-    if (countryMatched.length === 0) {
-      if (pass < maxAttempts) {
-        console.log(
-          `No ${countryCode} proxies returned. Waiting 15s before retry...`
-        );
-        await sleep(15000);
-        continue;
-      }
-      return null;
-    }
-
-    const usedIPs = getUsedIpsToday(campaignId);
-    console.log(`Used IPs today for campaign ${campaignId}: ${usedIPs.length}`);
-
-    const shuffled = [...countryMatched].sort(() => Math.random() - 0.5);
-    const maxProbes = Math.min(shuffled.length, 20);
-
-    for (let i = 0; i < maxProbes; i++) {
-      const candidate = shuffled[i];
-      const candidateConfig = parseProxy(candidate.proxy_url);
-      console.log(
-        `Probing proxy ${i + 1}/${maxProbes} (${candidate.proxyKey})`
-      );
-      const ipInfo = await getIpAndCountryViaProxy(candidateConfig);
-      if (!ipInfo.ip) {
-        console.log(`   Probe failed, trying next`);
-        continue;
-      }
-      if (
-        !ipInfo.country ||
-        ipInfo.country.toUpperCase() !== countryCode.toUpperCase()
-      ) {
-        console.log(
-          `   REJECTED: Exit IP ${ipInfo.ip} is in ${
-            ipInfo.country || "unknown"
-          }, not ${countryCode}`
-        );
-        continue;
-      }
-      const freshUsedIPs = getUsedIpsToday(campaignId);
-      if (freshUsedIPs.includes(ipInfo.ip)) {
-        console.log(
-          `   REJECTED: IP ${ipInfo.ip} already used today (fresh check)`
-        );
-        continue;
-      }
-      console.log(`   ACCEPTED: IP ${ipInfo.ip} in ${ipInfo.country}`);
-      return {
-        proxyConfig: candidateConfig,
-        proxyRecord: { id: null, proxy_url: candidate.proxy_url },
-        ipAddress: ipInfo.ip,
-        ipCountry: ipInfo.country,
-      };
-    }
-
-    if (pass < maxAttempts) {
-      console.log(
-        `No valid ${countryCode} proxy found in ${maxProbes} probes. Waiting 15s before retry...`
-      );
-      await sleep(15000);
-    }
+  if (!allProxies || allProxies.length === 0) {
+    console.log(`${providerName} returned 0 proxies for ${countryCode}`);
+    return null;
   }
+
+  const usedIPs = getUsedIpsToday(campaignId);
+  console.log(
+    `${providerName} returned ${allProxies.length} sessions. Used IPs today: ${usedIPs.length}`
+  );
+
+  const maxProbes = Math.min(allProxies.length, 20);
+
+  for (let i = 0; i < maxProbes; i++) {
+    const candidate = allProxies[i];
+    const candidateConfig = buildProxyConfigFromCandidate(candidate);
+    if (!candidateConfig) {
+      console.log(
+        `   Invalid proxy config for ${candidate.proxyKey}, skipping`
+      );
+      continue;
+    }
+    console.log(
+      `Probing ${providerName} proxy ${i + 1}/${maxProbes} (${
+        candidate.proxyKey
+      })`
+    );
+    const ipInfo = await getIpAndCountryViaProxy(candidateConfig);
+    if (!ipInfo.ip) {
+      console.log(`   Probe failed, trying next`);
+      continue;
+    }
+    if (
+      !ipInfo.country ||
+      ipInfo.country.toUpperCase() !== countryCode.toUpperCase()
+    ) {
+      console.log(
+        `   REJECTED: Exit IP ${ipInfo.ip} is in ${
+          ipInfo.country || "unknown"
+        }, not ${countryCode}`
+      );
+      continue;
+    }
+    const freshUsedIPs = getUsedIpsToday(campaignId);
+    if (freshUsedIPs.includes(ipInfo.ip)) {
+      console.log(
+        `   REJECTED: IP ${ipInfo.ip} already used today (fresh check)`
+      );
+      continue;
+    }
+    console.log(
+      `   ACCEPTED: IP ${ipInfo.ip} in ${ipInfo.country} via ${providerName}`
+    );
+    return {
+      proxyConfig: candidateConfig,
+      proxyRecord: { id: null, proxy_url: candidate.proxy_url },
+      ipAddress: ipInfo.ip,
+      ipCountry: ipInfo.country,
+      provider: providerName,
+    };
+  }
+
+  return null;
+}
+
+async function tryHostedProxies(countryCode, campaignId) {
+  const providers = proxyProvider.getActiveProviders();
+
+  if (providers.length === 0) {
+    console.log(
+      "No hosted proxy provider enabled (set NOVA_ENABLED=true or KIND_ENABLED=true)"
+    );
+    return null;
+  }
+
+  console.log(`Active providers in priority order: ${providers.join(" -> ")}`);
+
+  for (const providerName of providers) {
+    const result = await tryProviderProxies(
+      providerName,
+      countryCode,
+      campaignId
+    );
+    if (result) {
+      return result;
+    }
+    console.log(
+      `${providerName} exhausted for ${countryCode}, trying next provider`
+    );
+  }
+
   return null;
 }
 
@@ -567,6 +592,10 @@ async function tryManualProxies(campaignId, countryCode) {
 
   for (const mp of shuffled) {
     const mpConfig = parseProxy(mp.proxy_url);
+    if (!mpConfig) {
+      console.log(`   Manual proxy INVALID format, skipping: ${mp.proxy_url}`);
+      continue;
+    }
     const ipInfo = await getIpAndCountryViaProxy(mpConfig);
     if (!ipInfo.ip) continue;
 
@@ -596,6 +625,7 @@ async function tryManualProxies(campaignId, countryCode) {
       proxyRecord: mp,
       ipAddress: ipInfo.ip,
       ipCountry: ipInfo.country,
+      provider: "manual",
     };
   }
   return null;
@@ -665,7 +695,6 @@ clickQueue.process(1, async (job) => {
   let ipCountry = null;
   let proxySource = "none";
 
-  const webshareKey = getWebshareApiKey();
   let countryToUse = null;
   if (campaign.target_country && campaign.target_country !== "Remote") {
     countryToUse = campaign.target_country;
@@ -681,22 +710,22 @@ clickQueue.process(1, async (job) => {
     }, strict: ${strictCountry})`
   );
 
-  if (webshareKey && countryCode) {
-    const result = await tryWebshareProxies(
-      webshareKey,
-      countryCode,
-      campaignId,
-      2
-    );
+  const providerStatus = proxyProvider.getStatus();
+  console.log(
+    `Provider status: Nova=${providerStatus.novaEnabled} Kind=${providerStatus.kindEnabled}`
+  );
+
+  if (countryCode) {
+    const result = await tryHostedProxies(countryCode, campaignId);
     if (result) {
       proxyConfig = result.proxyConfig;
       proxyRecord = result.proxyRecord;
       ipAddress = result.ipAddress;
       ipCountry = result.ipCountry;
-      proxySource = "webshare";
+      proxySource = result.provider;
     } else {
       console.log(
-        `Webshare exhausted for ${countryCode}, trying manual proxies`
+        `All hosted providers exhausted for ${countryCode}, trying manual proxies`
       );
     }
   }

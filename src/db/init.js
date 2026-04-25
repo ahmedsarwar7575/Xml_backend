@@ -102,7 +102,20 @@ db.exec(`
     ('webshare_api_key', ''),
     ('capsolver_key', ''),
     ('captcha_enabled', 'false'),
-    ('headless_mode', 'true');
+    ('headless_mode', 'true'),
+    ('admin_username', 'admin'),
+    ('admin_password', 'password'),
+    ('timezone', 'UTC'),
+    ('NovaProxyHost', ''),
+    ('NovaProxyPort', ''),
+    ('NovaProxyUsername', ''),
+    ('NovaProxyPassword', ''),
+    ('IsNovaProxy', 'false'),
+    ('KindProxyHost', ''),
+    ('KindProxyPort', ''),
+    ('KindProxyUsername', ''),
+    ('KindProxyPassword', ''),
+    ('isKindProxy', 'false');
 `);
 
 try {
@@ -115,4 +128,5 @@ db.exec("PRAGMA journal_mode = WAL;");
 db.exec("PRAGMA synchronous = NORMAL;");
 
 console.log("Database initialized at", dbPath);
+
 module.exports = db;
