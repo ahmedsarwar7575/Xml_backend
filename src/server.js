@@ -19,7 +19,9 @@ if (!fs.existsSync(uploadDir)) {
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+const screenshotsDir = path.join(__dirname, "screenshots");
 
+app.use("/screenshots", express.static(screenshotsDir));
 app.get("/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });

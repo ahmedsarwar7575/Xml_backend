@@ -4,6 +4,7 @@ const fs = require("fs");
 const db = require("../db/init");
 const clickQueue = require("../queue/clickQueue");
 const proxyProvider = require("../services/proxyProvider");
+const captchaSolver = require("../services/captchaSolver");
 const { countryNameToCode } = require("../utils/countryMapping");
 const memoryManager = require("../utils/memoryManager");
 
@@ -19,6 +20,7 @@ if (!fs.existsSync(SCREENSHOT_DIR)) {
   fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
 }
 memoryManager.startMemoryMonitor();
+
 function getSetting(key) {
   const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(key);
   return row ? row.value : null;
@@ -137,145 +139,6 @@ function claimNextItem(campaignId, feedId, campaign) {
   }
 
   return item;
-}
-
-async function capsolverTask(apiKey, taskPayload) {
-  if (!apiKey) throw new Error("Capsolver API key missing");
-  const createRes = await fetch("https://api.capsolver.com/createTask", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ clientKey: apiKey, task: taskPayload }),
-  });
-  const createData = await createRes.json();
-  if (createData.errorId !== 0)
-    throw new Error(`Capsolver createTask: ${createData.errorDescription}`);
-  const taskId = createData.taskId;
-  for (let i = 0; i < 30; i++) {
-    await sleep(3000);
-    const resultRes = await fetch("https://api.capsolver.com/getTaskResult", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ clientKey: apiKey, taskId }),
-    });
-    const resultData = await resultRes.json();
-    if (resultData.status === "ready") return resultData.solution;
-    if (resultData.errorId !== 0)
-      throw new Error(
-        `Capsolver getTaskResult: ${resultData.errorDescription}`
-      );
-  }
-  throw new Error("Capsolver timed out after 90s");
-}
-
-async function detectCaptcha(page) {
-  try {
-    await page
-      .waitForFunction(
-        () =>
-          document.querySelector(".cf-turnstile, .h-captcha, .g-recaptcha") !==
-          null,
-        { timeout: 15000 }
-      )
-      .catch(() => {});
-  } catch (_) {}
-
-  const captchas = await page.evaluate(() => {
-    const found = [];
-    const turnstileDiv = document.querySelector(".cf-turnstile");
-    if (turnstileDiv && turnstileDiv.dataset.sitekey) {
-      found.push({ type: "turnstile", siteKey: turnstileDiv.dataset.sitekey });
-    }
-    const hcaptchaDiv = document.querySelector(".h-captcha");
-    if (hcaptchaDiv && hcaptchaDiv.dataset.sitekey) {
-      found.push({ type: "hcaptcha", siteKey: hcaptchaDiv.dataset.sitekey });
-    }
-    const recaptchaDiv = document.querySelector(".g-recaptcha");
-    if (recaptchaDiv && recaptchaDiv.dataset.sitekey) {
-      found.push({ type: "recaptcha", siteKey: recaptchaDiv.dataset.sitekey });
-    }
-    return found;
-  });
-  return captchas;
-}
-
-async function solveCaptchaOnPage(page, capsolverKey, captchaEnabled) {
-  if (!captchaEnabled || !capsolverKey) {
-    console.log("   Captcha solving disabled or no API key - skipping");
-    return false;
-  }
-  const pageUrl = page.url();
-  if (!pageUrl || pageUrl === "about:blank") return false;
-  const captchas = await detectCaptcha(page);
-  if (captchas.length === 0) {
-    console.log("   No captcha detected after polling");
-    return false;
-  }
-  let solved = false;
-  for (const captcha of captchas) {
-    console.log(`   Detected: ${captcha.type} | siteKey: ${captcha.siteKey}`);
-    if (!captcha.siteKey) continue;
-    try {
-      if (captcha.type === "turnstile") {
-        const solution = await capsolverTask(capsolverKey, {
-          type: "AntiTurnstileTaskProxyLess",
-          websiteURL: pageUrl,
-          websiteKey: captcha.siteKey,
-        });
-        await page.evaluate((token) => {
-          const widget = document.querySelector(".cf-turnstile");
-          if (widget && widget.shadowRoot) {
-            const input = widget.shadowRoot.querySelector(
-              'input[name="cf-turnstile-response"]'
-            );
-            if (input) input.value = token;
-          }
-          const regularInput = document.querySelector(
-            'input[name="cf-turnstile-response"]'
-          );
-          if (regularInput) regularInput.value = token;
-          const form = document.querySelector("form");
-          if (form) {
-            const submitBtn = form.querySelector(
-              'button[type="submit"], input[type="submit"]'
-            );
-            if (submitBtn) submitBtn.click();
-            else form.dispatchEvent(new Event("submit", { bubbles: true }));
-          }
-        }, solution.token);
-        solved = true;
-      } else if (captcha.type === "hcaptcha") {
-        const solution = await capsolverTask(capsolverKey, {
-          type: "HCaptchaTaskProxyLess",
-          websiteURL: pageUrl,
-          websiteKey: captcha.siteKey,
-        });
-        await page.evaluate((token) => {
-          const input = document.querySelector('[name="h-captcha-response"]');
-          if (input) input.value = token;
-          const form = document.querySelector("form");
-          if (form) form.dispatchEvent(new Event("submit", { bubbles: true }));
-        }, solution.gRecaptchaResponse);
-        solved = true;
-      } else if (captcha.type === "recaptcha") {
-        const solution = await capsolverTask(capsolverKey, {
-          type: "ReCaptchaV2TaskProxyLess",
-          websiteURL: pageUrl,
-          websiteKey: captcha.siteKey,
-        });
-        await page.evaluate((token) => {
-          const input = document.querySelector('[name="g-recaptcha-response"]');
-          if (input) input.value = token;
-          const form = document.querySelector("form");
-          if (form) form.dispatchEvent(new Event("submit", { bubbles: true }));
-        }, solution.gRecaptchaResponse);
-        solved = true;
-      }
-      await page.waitForTimeout(3000);
-    } catch (err) {
-      console.error(`   Failed to solve ${captcha.type}:`, err.message);
-    }
-  }
-  return solved;
 }
 
 async function smoothScroll(page) {
@@ -410,11 +273,53 @@ async function waitForAllRedirects(page, maxWaitMs = 30000) {
   }
 }
 
+async function waitForScriptsToLoad(page, maxWaitMs = 20000) {
+  console.log(`   Waiting for scripts to fully load on final page...`);
+  const deadline = Date.now() + maxWaitMs;
+
+  try {
+    await page.waitForLoadState("load", { timeout: maxWaitMs }).catch(() => {});
+  } catch (_) {}
+
+  try {
+    await page
+      .waitForLoadState("networkidle", { timeout: 10000 })
+      .catch(() => {});
+  } catch (_) {}
+
+  const remaining = Math.max(0, deadline - Date.now());
+  if (remaining > 0) {
+    try {
+      await page
+        .waitForFunction(
+          () => {
+            if (document.readyState !== "complete") return false;
+            if (
+              typeof window.jQuery !== "undefined" &&
+              window.jQuery.active > 0
+            )
+              return false;
+            const pendingImgs = Array.from(document.images).filter(
+              (img) => !img.complete
+            );
+            return pendingImgs.length === 0;
+          },
+          { timeout: remaining, polling: 500 }
+        )
+        .catch(() => {});
+    } catch (_) {}
+  }
+
+  await page.waitForTimeout(2000);
+  console.log(`   Scripts loaded, page is fully ready`);
+}
+
 async function executeClick(
   page,
   url,
   capsolverKey,
   captchaEnabled,
+  proxyConfig,
   timeoutMs = 120000
 ) {
   try {
@@ -425,26 +330,63 @@ async function executeClick(
     console.log(`   Waiting for all redirects to complete...`);
     await waitForAllRedirects(page, 30000);
 
-    const solved = await solveCaptchaOnPage(page, capsolverKey, captchaEnabled);
-    if (solved) {
-      console.log("   Captcha solved, waiting for post-captcha redirects...");
-      await waitForAllRedirects(page, 20000);
+    const captchaResult = await captchaSolver.solveAllCaptchas(
+      page,
+      capsolverKey,
+      captchaEnabled,
+      proxyConfig
+    );
+
+    if (captchaResult.solved) {
+      console.log(`   Captcha(s) solved: ${captchaResult.types.join(", ")}`);
+      console.log("   Waiting for post-captcha redirects...");
+      await waitForAllRedirects(page, 25000);
+
+      const recheck = await captchaSolver.detectChallenges(page);
+      if (recheck.length > 0) {
+        console.log(
+          `   Post-solve recheck: ${recheck.length} challenge(s) still present, attempting once more`
+        );
+        await captchaSolver.solveAllCaptchas(
+          page,
+          capsolverKey,
+          captchaEnabled,
+          proxyConfig
+        );
+        await waitForAllRedirects(page, 20000);
+      }
+
+      try {
+        await smoothScroll(page);
+      } catch (_) {}
+    } else if (captchaResult.error) {
+      console.log(
+        `   Captcha solve attempted but failed: ${captchaResult.error}`
+      );
       try {
         await smoothScroll(page);
       } catch (_) {}
     } else {
-      console.log("   Performing smooth scroll...");
+      console.log("   No captcha detected, performing smooth scroll...");
       await smoothScroll(page);
     }
 
     console.log("   Final redirect check after interactions...");
     await waitForAllRedirects(page, 10000);
 
-    await page.waitForTimeout(1000);
+    await waitForScriptsToLoad(page, 20000);
+
     const finalUrl = page.url();
     const userAgent = await page.evaluate(() => navigator.userAgent);
-    console.log(`   Final URL after all redirects: ${finalUrl}`);
-    return { success: true, finalUrl, userAgent };
+    console.log(`   Final URL after all redirects + scripts: ${finalUrl}`);
+
+    return {
+      success: true,
+      finalUrl,
+      userAgent,
+      captchaSolved: captchaResult.solved,
+      captchaTypes: captchaResult.types,
+    };
   } catch (err) {
     console.error(`   Click execution error: ${err.message}`);
     return { success: false, errorMessage: err.message };
@@ -571,9 +513,7 @@ async function tryHostedProxies(countryCode, campaignId) {
       countryCode,
       campaignId
     );
-    if (result) {
-      return result;
-    }
+    if (result) return result;
     console.log(
       `${providerName} exhausted for ${countryCode}, trying next provider`
     );
@@ -813,6 +753,11 @@ clickQueue.process(1, async (job) => {
       ipAddress || "unknown"
     }, Country: ${ipCountry || "unknown"})`
   );
+  console.log(
+    `Captcha: enabled=${captchaEnabled}, capsolver=${
+      capsolverKey ? "configured" : "missing"
+    }`
+  );
 
   let browser = null;
   let result = {
@@ -820,11 +765,20 @@ clickQueue.process(1, async (job) => {
     finalUrl: null,
     userAgent: null,
     errorMessage: null,
+    captchaSolved: false,
+    captchaTypes: [],
   };
   let screenshotPath = null;
 
   try {
-    const launchOptions = { headless };
+    const launchOptions = {
+      headless,
+      args: [
+        "--disable-blink-features=AutomationControlled",
+        "--no-sandbox",
+        "--ignore-certificate-errors",
+      ],
+    };
     if (proxyConfig) launchOptions.proxy = proxyConfig;
     browser = await chromium.launch(launchOptions);
     const context = await browser.newContext({
@@ -832,6 +786,11 @@ clickQueue.process(1, async (job) => {
       userAgent: selectedProfile.userAgent,
       viewport: selectedProfile.viewport,
     });
+
+    await context.addInitScript(() => {
+      Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+    });
+
     const page = await context.newPage();
 
     const clickResult = await executeClick(
@@ -839,6 +798,7 @@ clickQueue.process(1, async (job) => {
       item.url,
       capsolverKey,
       captchaEnabled,
+      proxyConfig,
       120000
     );
 
@@ -884,16 +844,19 @@ clickQueue.process(1, async (job) => {
   );
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+  const captchaInfo = result.captchaSolved
+    ? `, Captcha: ${result.captchaTypes.join("+")}`
+    : "";
   console.log(
     `\nClick recorded: ${result.success ? "SUCCESS" : "FAILURE"} (IP: ${
       ipAddress || "unknown"
     }, Country: ${
       ipCountry || "unknown"
-    }, Source: ${proxySource}, Duration: ${duration}s)`
+    }, Source: ${proxySource}, Duration: ${duration}s${captchaInfo})`
   );
   memoryManager.checkMemoryUsage();
   console.log("========== JOB END ==========\n");
   return { success: result.success, itemId: item.id };
 });
 
-console.log("Click worker started");
+console.log("Click worker started (with full captcha support)");
