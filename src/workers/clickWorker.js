@@ -145,16 +145,47 @@ async function smoothScroll(page) {
   await page.evaluate(async () => {
     const scrollHeight = document.body.scrollHeight;
     const windowHeight = window.innerHeight;
-    const steps = Math.max(10, Math.floor(scrollHeight / windowHeight) * 2);
-    let current = 0;
+    if (scrollHeight <= windowHeight) return;
+    const steps = Math.max(12, Math.floor(scrollHeight / windowHeight) * 3);
     for (let i = 0; i <= steps; i++) {
-      current = (scrollHeight / steps) * i;
+      const current = (scrollHeight / steps) * i;
       window.scrollTo({ top: current, behavior: "smooth" });
-      await new Promise((r) => setTimeout(r, Math.random() * 100 + 50));
+      // human-like random pause between scrolls
+      const delay =
+        80 + Math.random() * 150 + (i % 4 === 0 ? Math.random() * 400 : 0);
+      await new Promise((r) => setTimeout(r, delay));
     }
-    window.scrollTo({ top: scrollHeight - windowHeight, behavior: "smooth" });
-    await new Promise((r) => setTimeout(r, 300));
+    // scroll back up a bit like a real user
+    await new Promise((r) => setTimeout(r, 300 + Math.random() * 200));
+    window.scrollTo({ top: scrollHeight * 0.6, behavior: "smooth" });
+    await new Promise((r) => setTimeout(r, 400 + Math.random() * 300));
   });
+}
+
+async function humanMouseMove(page) {
+  try {
+    const vp = page.viewportSize();
+    if (!vp) return;
+    // move mouse in a natural arc
+    const points = [
+      {
+        x: Math.floor(vp.width * 0.3 + Math.random() * 100),
+        y: Math.floor(vp.height * 0.3 + Math.random() * 80),
+      },
+      {
+        x: Math.floor(vp.width * 0.5 + Math.random() * 80),
+        y: Math.floor(vp.height * 0.4 + Math.random() * 60),
+      },
+      {
+        x: Math.floor(vp.width * 0.4 + Math.random() * 120),
+        y: Math.floor(vp.height * 0.6 + Math.random() * 80),
+      },
+    ];
+    for (const p of points) {
+      await page.mouse.move(p.x, p.y, { steps: 8 });
+      await page.waitForTimeout(150 + Math.floor(Math.random() * 200));
+    }
+  } catch (_) {}
 }
 
 function parseProxy(proxyUrl) {
@@ -374,9 +405,15 @@ async function executeClick(
     );
     if (step1.solved) allCaptchaTypes.push(...step1.types);
 
-    console.log("   Performing smooth scroll...");
+    console.log("   Performing smooth scroll + mouse movement...");
+    try {
+      await humanMouseMove(page);
+    } catch (_) {}
     try {
       await smoothScroll(page);
+    } catch (_) {}
+    try {
+      await humanMouseMove(page);
     } catch (_) {}
 
     console.log("   Final redirect check after scroll...");
