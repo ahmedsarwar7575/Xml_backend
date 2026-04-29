@@ -314,6 +314,39 @@ async function waitForScriptsToLoad(page, maxWaitMs = 20000) {
   console.log(`   Scripts loaded, page is fully ready`);
 }
 
+async function checkAndSolveCaptcha(
+  page,
+  capsolverKey,
+  captchaEnabled,
+  proxyConfig,
+  label
+) {
+  const result = await captchaSolver.solveAllCaptchas(
+    page,
+    capsolverKey,
+    captchaEnabled,
+    proxyConfig
+  );
+  if (result.solved) {
+    console.log(`   [${label}] Captcha(s) solved: ${result.types.join(", ")}`);
+    await waitForAllRedirects(page, 20000);
+    const recheck = await captchaSolver.detectChallenges(page);
+    if (recheck.length > 0) {
+      console.log(`   [${label}] Still detected after solve, retrying once...`);
+      await captchaSolver.solveAllCaptchas(
+        page,
+        capsolverKey,
+        captchaEnabled,
+        proxyConfig
+      );
+      await waitForAllRedirects(page, 15000);
+    }
+  } else if (result.error) {
+    console.log(`   [${label}] Captcha solve failed: ${result.error}`);
+  }
+  return result;
+}
+
 async function executeClick(
   page,
   url,
@@ -322,6 +355,8 @@ async function executeClick(
   proxyConfig,
   timeoutMs = 120000
 ) {
+  const allCaptchaTypes = [];
+
   try {
     console.log(`   Navigating to ${url} (timeout ${timeoutMs}ms)`);
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
@@ -330,62 +365,61 @@ async function executeClick(
     console.log(`   Waiting for all redirects to complete...`);
     await waitForAllRedirects(page, 30000);
 
-    const captchaResult = await captchaSolver.solveAllCaptchas(
+    const step1 = await checkAndSolveCaptcha(
       page,
       capsolverKey,
       captchaEnabled,
-      proxyConfig
+      proxyConfig,
+      "after-nav"
     );
+    if (step1.solved) allCaptchaTypes.push(...step1.types);
 
-    if (captchaResult.solved) {
-      console.log(`   Captcha(s) solved: ${captchaResult.types.join(", ")}`);
-      console.log("   Waiting for post-captcha redirects...");
-      await waitForAllRedirects(page, 25000);
-
-      const recheck = await captchaSolver.detectChallenges(page);
-      if (recheck.length > 0) {
-        console.log(
-          `   Post-solve recheck: ${recheck.length} challenge(s) still present, attempting once more`
-        );
-        await captchaSolver.solveAllCaptchas(
-          page,
-          capsolverKey,
-          captchaEnabled,
-          proxyConfig
-        );
-        await waitForAllRedirects(page, 20000);
-      }
-
-      try {
-        await smoothScroll(page);
-      } catch (_) {}
-    } else if (captchaResult.error) {
-      console.log(
-        `   Captcha solve attempted but failed: ${captchaResult.error}`
-      );
-      try {
-        await smoothScroll(page);
-      } catch (_) {}
-    } else {
-      console.log("   No captcha detected, performing smooth scroll...");
+    console.log("   Performing smooth scroll...");
+    try {
       await smoothScroll(page);
-    }
+    } catch (_) {}
 
-    console.log("   Final redirect check after interactions...");
+    console.log("   Final redirect check after scroll...");
     await waitForAllRedirects(page, 10000);
+
+    const step2 = await checkAndSolveCaptcha(
+      page,
+      capsolverKey,
+      captchaEnabled,
+      proxyConfig,
+      "after-scroll"
+    );
+    if (step2.solved) allCaptchaTypes.push(...step2.types);
 
     await waitForScriptsToLoad(page, 20000);
 
+    const step3 = await checkAndSolveCaptcha(
+      page,
+      capsolverKey,
+      captchaEnabled,
+      proxyConfig,
+      "final-page"
+    );
+    if (step3.solved) {
+      allCaptchaTypes.push(...step3.types);
+      await waitForAllRedirects(page, 15000);
+      await waitForScriptsToLoad(page, 10000);
+    }
+
     const finalUrl = page.url();
     const userAgent = await page.evaluate(() => navigator.userAgent);
+    const captchaSolved = allCaptchaTypes.length > 0;
     console.log(`   Final URL after all redirects + scripts: ${finalUrl}`);
+    if (captchaSolved) {
+      console.log(`   Total captchas solved: ${allCaptchaTypes.join(", ")}`);
+    }
 
     return {
       success: true,
       finalUrl,
       userAgent,
-      captchaSolved: captchaResult.solved,
-      captchaTypes: captchaResult.types,
+      captchaSolved,
+      captchaTypes: allCaptchaTypes,
     };
   } catch (err) {
     console.error(`   Click execution error: ${err.message}`);
