@@ -8,7 +8,9 @@ async function capsolverPost(apiKey, endpoint, body) {
   });
   const data = await res.json();
   if (data.errorId !== 0) {
-    throw new Error(`CapSolver [${endpoint}]: ${data.errorDescription || "unknown error"}`);
+    throw new Error(
+      `CapSolver [${endpoint}]: ${data.errorDescription || "unknown error"}`
+    );
   }
   return data;
 }
@@ -19,10 +21,14 @@ async function pollResult(apiKey, taskId, maxPolls = 40, intervalMs = 3000) {
     const r = await capsolverPost(apiKey, "getTaskResult", { taskId });
     if (r.status === "ready") return r.solution;
     if (r.status === "failed") {
-      throw new Error(`CapSolver task failed: ${r.errorDescription || "unknown"}`);
+      throw new Error(
+        `CapSolver task failed: ${r.errorDescription || "unknown"}`
+      );
     }
   }
-  throw new Error("CapSolver timed out after " + (maxPolls * intervalMs / 1000) + "s");
+  throw new Error(
+    "CapSolver timed out after " + (maxPolls * intervalMs) / 1000 + "s"
+  );
 }
 
 function toCapsolverProxy(proxyConfig) {
@@ -45,26 +51,38 @@ async function detectChallenges(page) {
       const found = [];
 
       const cfChallengeForm = document.querySelector("form#challenge-form");
-      const cfAction = cfChallengeForm ? cfChallengeForm.getAttribute("action") || "" : "";
+      const cfAction = cfChallengeForm
+        ? cfChallengeForm.getAttribute("action") || ""
+        : "";
       const isCfFullChallenge =
         (document.title || "").includes("Just a moment") ||
         cfAction.includes("__cf_chl_f_tk") ||
-        !!document.querySelector("#cf-challenge-running, .cf-challenge-running") ||
+        !!document.querySelector(
+          "#cf-challenge-running, .cf-challenge-running"
+        ) ||
         location.href.includes("cdn-cgi/challenge-platform");
 
       if (isCfFullChallenge) {
         found.push({ type: "cloudflare_challenge" });
       }
 
-      const turnstileEls = document.querySelectorAll(".cf-turnstile, [data-sitekey][data-action]");
+      const turnstileEls = document.querySelectorAll(
+        ".cf-turnstile, [data-sitekey][data-action]"
+      );
       for (const el of turnstileEls) {
         const sitekey = el.getAttribute("data-sitekey");
         if (sitekey) {
-          found.push({ type: "turnstile", siteKey: sitekey, action: el.getAttribute("data-action") || null });
+          found.push({
+            type: "turnstile",
+            siteKey: sitekey,
+            action: el.getAttribute("data-action") || null,
+          });
         }
       }
 
-      const recaptchaEls = document.querySelectorAll(".g-recaptcha, [data-sitekey]");
+      const recaptchaEls = document.querySelectorAll(
+        ".g-recaptcha, [data-sitekey]"
+      );
       for (const el of recaptchaEls) {
         if (el.classList.contains("cf-turnstile")) continue;
         const sitekey = el.getAttribute("data-sitekey");
@@ -108,23 +126,42 @@ async function detectChallenges(page) {
 
 async function solveCloudflareChallenge(apiKey, page, proxyConfig) {
   const pageUrl = page.url();
-  const pageUA = await page.evaluate(() => navigator.userAgent);
-  const pageHtmlB64 = await page.evaluate(() =>
-    btoa(unescape(encodeURIComponent(document.documentElement.outerHTML)))
-  );
+  const pageUA = await page.evaluate(() => navigator.userAgent).catch(() => "");
+  const pageHtmlB64 = await page
+    .evaluate(() => {
+      try {
+        return btoa(
+          unescape(encodeURIComponent(document.documentElement.outerHTML))
+        );
+      } catch (_) {
+        return btoa(document.documentElement.outerHTML.substring(0, 50000));
+      }
+    })
+    .catch(() => "");
+
+  const capProxy = toCapsolverProxy(proxyConfig);
+  if (!capProxy) {
+    console.log("   CF challenge requires proxy - skipping AntiCloudflareTask");
+    return false;
+  }
 
   const taskPayload = {
     type: "AntiCloudflareTask",
     websiteURL: pageUrl,
-    userAgent: pageUA,
-    html: pageHtmlB64,
+    proxy: capProxy,
+    userAgent:
+      pageUA ||
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
   };
 
-  const capProxy = toCapsolverProxy(proxyConfig);
-  if (capProxy) taskPayload.proxy = capProxy;
+  if (pageHtmlB64) taskPayload.html = pageHtmlB64;
 
-  const { taskId } = await capsolverPost(apiKey, "createTask", { task: taskPayload });
-  const solution = await pollResult(apiKey, taskId);
+  console.log(`   CF task proxy: ${capProxy.replace(/:([^:@]+)@/, ":****@")}`);
+
+  const { taskId } = await capsolverPost(apiKey, "createTask", {
+    task: taskPayload,
+  });
+  const solution = await pollResult(apiKey, taskId, 60, 3000);
 
   if (!solution || !solution.token) {
     throw new Error("CapSolver returned no token for Cloudflare challenge");
@@ -145,11 +182,13 @@ async function solveCloudflareChallenge(apiKey, page, proxyConfig) {
     },
   ]);
 
-  if (solution.userAgent) {
-    await page.setExtraHTTPHeaders({ "user-agent": solution.userAgent });
+  const ua = solution.userAgent || pageUA;
+  if (ua) {
+    await page.setExtraHTTPHeaders({ "user-agent": ua });
   }
 
   await page.goto(pageUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+  await sleep(2000);
   return true;
 }
 
@@ -164,26 +203,37 @@ async function solveTurnstile(apiKey, page, captcha, proxyConfig) {
     taskPayload.metadata = { action: captcha.action };
   }
 
-  const { taskId } = await capsolverPost(apiKey, "createTask", { task: taskPayload });
+  const { taskId } = await capsolverPost(apiKey, "createTask", {
+    task: taskPayload,
+  });
   const solution = await pollResult(apiKey, taskId);
-  if (!solution || !solution.token) throw new Error("No turnstile token returned");
+  if (!solution || !solution.token)
+    throw new Error("No turnstile token returned");
 
   await page.evaluate((token) => {
     const widget = document.querySelector(".cf-turnstile");
     if (widget && widget.shadowRoot) {
-      const input = widget.shadowRoot.querySelector('input[name="cf-turnstile-response"]');
+      const input = widget.shadowRoot.querySelector(
+        'input[name="cf-turnstile-response"]'
+      );
       if (input) input.value = token;
     }
-    const inputs = document.querySelectorAll('input[name="cf-turnstile-response"]');
+    const inputs = document.querySelectorAll(
+      'input[name="cf-turnstile-response"]'
+    );
     for (const input of inputs) input.value = token;
 
     if (window.turnstile && typeof window.turnstile.execute === "function") {
-      try { window.turnstile.execute(); } catch (_) {}
+      try {
+        window.turnstile.execute();
+      } catch (_) {}
     }
 
     const form = document.querySelector("form");
     if (form) {
-      const submitBtn = form.querySelector('button[type="submit"], input[type="submit"]');
+      const submitBtn = form.querySelector(
+        'button[type="submit"], input[type="submit"]'
+      );
       if (submitBtn) submitBtn.click();
       else form.dispatchEvent(new Event("submit", { bubbles: true }));
     }
@@ -192,9 +242,17 @@ async function solveTurnstile(apiKey, page, captcha, proxyConfig) {
   return true;
 }
 
-async function solveRecaptchaV2(apiKey, page, captcha, proxyConfig, isEnterprise = false) {
+async function solveRecaptchaV2(
+  apiKey,
+  page,
+  captcha,
+  proxyConfig,
+  isEnterprise = false
+) {
   const pageUrl = page.url();
-  const taskType = isEnterprise ? "ReCaptchaV2EnterpriseTaskProxyLess" : "ReCaptchaV2TaskProxyLess";
+  const taskType = isEnterprise
+    ? "ReCaptchaV2EnterpriseTaskProxyLess"
+    : "ReCaptchaV2TaskProxyLess";
 
   const taskPayload = {
     type: taskType,
@@ -203,17 +261,25 @@ async function solveRecaptchaV2(apiKey, page, captcha, proxyConfig, isEnterprise
     isInvisible: !!captcha.isInvisible,
   };
 
-  const { taskId } = await capsolverPost(apiKey, "createTask", { task: taskPayload });
+  const { taskId } = await capsolverPost(apiKey, "createTask", {
+    task: taskPayload,
+  });
   const solution = await pollResult(apiKey, taskId);
   if (!solution || !solution.gRecaptchaResponse) {
     throw new Error("No reCAPTCHA token returned");
   }
 
   await page.evaluate((token) => {
-    const textareas = document.querySelectorAll('textarea[name="g-recaptcha-response"]');
+    const textareas = document.querySelectorAll(
+      'textarea[name="g-recaptcha-response"]'
+    );
     for (const ta of textareas) {
-      ta.value = token;
-      ta.innerHTML = token;
+      Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        "value"
+      )?.set?.call(ta, token);
+      ta.dispatchEvent(new Event("input", { bubbles: true }));
+      ta.dispatchEvent(new Event("change", { bubbles: true }));
       ta.style.display = "block";
     }
     if (textareas.length === 0) {
@@ -224,29 +290,46 @@ async function solveRecaptchaV2(apiKey, page, captcha, proxyConfig, isEnterprise
       document.body.appendChild(ta);
     }
 
-    if (window.___grecaptcha_cfg && window.___grecaptcha_cfg.clients) {
-      try {
-        const clients = window.___grecaptcha_cfg.clients;
-        for (const idx of Object.keys(clients)) {
-          const client = clients[idx];
-          for (const key of Object.keys(client)) {
-            const obj = client[key];
-            if (obj && typeof obj === "object") {
-              for (const k of Object.keys(obj)) {
-                const inner = obj[k];
-                if (inner && typeof inner.callback === "function") {
-                  try { inner.callback(token); } catch (_) {}
-                }
-              }
+    const fireCallbacks = (token) => {
+      if (window.___grecaptcha_cfg && window.___grecaptcha_cfg.clients) {
+        try {
+          const walk = (obj, depth) => {
+            if (!obj || depth > 6 || typeof obj !== "object") return;
+            if (typeof obj.callback === "function") {
+              try {
+                obj.callback(token);
+              } catch (_) {}
             }
+            for (const k of Object.keys(obj)) {
+              try {
+                walk(obj[k], depth + 1);
+              } catch (_) {}
+            }
+          };
+          walk(window.___grecaptcha_cfg.clients, 0);
+        } catch (_) {}
+      }
+      if (window.grecaptcha) {
+        try {
+          const getR = window.grecaptcha.enterprise || window.grecaptcha;
+          const widgetIds = Object.keys(
+            window.___grecaptcha_cfg?.clients || {}
+          );
+          for (const id of widgetIds) {
+            try {
+              getR.execute && getR.execute(parseInt(id));
+            } catch (_) {}
           }
-        }
-      } catch (_) {}
-    }
+        } catch (_) {}
+      }
+    };
+    fireCallbacks(token);
 
     const form = document.querySelector("form");
     if (form) {
-      const submitBtn = form.querySelector('button[type="submit"], input[type="submit"]');
+      const submitBtn = form.querySelector(
+        'button[type="submit"], input[type="submit"]'
+      );
       if (submitBtn) submitBtn.click();
       else form.dispatchEvent(new Event("submit", { bubbles: true }));
     }
@@ -263,21 +346,27 @@ async function solveHCaptcha(apiKey, page, captcha) {
     websiteKey: captcha.siteKey,
   };
 
-  const { taskId } = await capsolverPost(apiKey, "createTask", { task: taskPayload });
+  const { taskId } = await capsolverPost(apiKey, "createTask", {
+    task: taskPayload,
+  });
   const solution = await pollResult(apiKey, taskId);
   if (!solution || !solution.gRecaptchaResponse) {
     throw new Error("No hCaptcha token returned");
   }
 
   await page.evaluate((token) => {
-    const textareas = document.querySelectorAll('textarea[name="h-captcha-response"], textarea[name="g-recaptcha-response"]');
+    const textareas = document.querySelectorAll(
+      'textarea[name="h-captcha-response"], textarea[name="g-recaptcha-response"]'
+    );
     for (const ta of textareas) {
       ta.value = token;
       ta.innerHTML = token;
     }
     const form = document.querySelector("form");
     if (form) {
-      const submitBtn = form.querySelector('button[type="submit"], input[type="submit"]');
+      const submitBtn = form.querySelector(
+        'button[type="submit"], input[type="submit"]'
+      );
       if (submitBtn) submitBtn.click();
       else form.dispatchEvent(new Event("submit", { bubbles: true }));
     }
@@ -286,7 +375,12 @@ async function solveHCaptcha(apiKey, page, captcha) {
   return true;
 }
 
-async function solveAllCaptchas(page, capsolverKey, captchaEnabled, proxyConfig) {
+async function solveAllCaptchas(
+  page,
+  capsolverKey,
+  captchaEnabled,
+  proxyConfig
+) {
   if (!captchaEnabled || !capsolverKey) {
     return { solved: false, types: [], error: null };
   }
@@ -313,14 +407,24 @@ async function solveAllCaptchas(page, capsolverKey, captchaEnabled, proxyConfig)
     return { solved: false, types: [], error: null };
   }
 
-  console.log(`   Detected ${challenges.length} challenge(s): ${challenges.map((c) => c.type).join(", ")}`);
+  console.log(
+    `   Detected ${challenges.length} challenge(s): ${challenges
+      .map((c) => c.type)
+      .join(", ")}`
+  );
 
   const solvedTypes = [];
   let lastError = null;
 
   for (const challenge of challenges) {
     try {
-      console.log(`   Solving: ${challenge.type}${challenge.siteKey ? " (sitekey: " + challenge.siteKey.slice(0, 20) + "...)" : ""}`);
+      console.log(
+        `   Solving: ${challenge.type}${
+          challenge.siteKey
+            ? " (sitekey: " + challenge.siteKey.slice(0, 20) + "...)"
+            : ""
+        }`
+      );
 
       if (challenge.type === "cloudflare_challenge") {
         await solveCloudflareChallenge(capsolverKey, page, proxyConfig);
@@ -329,10 +433,22 @@ async function solveAllCaptchas(page, capsolverKey, captchaEnabled, proxyConfig)
         await solveTurnstile(capsolverKey, page, challenge, proxyConfig);
         solvedTypes.push("turnstile");
       } else if (challenge.type === "recaptcha_v2") {
-        await solveRecaptchaV2(capsolverKey, page, challenge, proxyConfig, false);
+        await solveRecaptchaV2(
+          capsolverKey,
+          page,
+          challenge,
+          proxyConfig,
+          false
+        );
         solvedTypes.push("recaptcha_v2");
       } else if (challenge.type === "recaptcha_v2_enterprise") {
-        await solveRecaptchaV2(capsolverKey, page, challenge, proxyConfig, true);
+        await solveRecaptchaV2(
+          capsolverKey,
+          page,
+          challenge,
+          proxyConfig,
+          true
+        );
         solvedTypes.push("recaptcha_v2_enterprise");
       } else if (challenge.type === "hcaptcha") {
         await solveHCaptcha(capsolverKey, page, challenge);

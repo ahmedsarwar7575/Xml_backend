@@ -811,6 +811,13 @@ clickQueue.process(1, async (job) => {
         "--disable-blink-features=AutomationControlled",
         "--no-sandbox",
         "--ignore-certificate-errors",
+        "--disable-web-security",
+        "--disable-features=IsolateOrigins,site-per-process",
+        "--disable-site-isolation-trials",
+        "--disable-dev-shm-usage",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-background-networking",
       ],
     };
     if (proxyConfig) launchOptions.proxy = proxyConfig;
@@ -819,10 +826,42 @@ clickQueue.process(1, async (job) => {
       ignoreHTTPSErrors: true,
       userAgent: selectedProfile.userAgent,
       viewport: selectedProfile.viewport,
+      locale: "en-US",
+      timezoneId: "America/New_York",
+      permissions: ["geolocation"],
+      extraHTTPHeaders: {
+        "Accept-Language": "en-US,en;q=0.9",
+        Accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Encoding": "gzip, deflate, br",
+      },
     });
 
     await context.addInitScript(() => {
       Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+      Object.defineProperty(navigator, "plugins", {
+        get: () => [1, 2, 3, 4, 5],
+      });
+      Object.defineProperty(navigator, "languages", {
+        get: () => ["en-US", "en"],
+      });
+      Object.defineProperty(navigator, "platform", { get: () => "Win32" });
+      Object.defineProperty(navigator, "hardwareConcurrency", { get: () => 8 });
+      Object.defineProperty(navigator, "deviceMemory", { get: () => 8 });
+      window.chrome = {
+        runtime: {},
+        loadTimes: () => {},
+        csi: () => {},
+        app: {},
+      };
+      const getParam = RTCPeerConnection.prototype.createOffer;
+      Object.defineProperty(screen, "colorDepth", { get: () => 24 });
+      Object.defineProperty(screen, "pixelDepth", { get: () => 24 });
+      const origQuery = window.navigator.permissions.query;
+      window.navigator.permissions.query = (params) =>
+        params.name === "notifications"
+          ? Promise.resolve({ state: Notification.permission })
+          : origQuery(params);
     });
 
     const page = await context.newPage();
