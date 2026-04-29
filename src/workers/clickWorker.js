@@ -264,7 +264,15 @@ async function getIpAndCountryViaProxy(proxyConfig) {
   }
 }
 
-async function waitForAllRedirects(page, maxWaitMs = 30000) {
+async function waitForAllRedirects(page, maxWaitMs = 30000, opts = {}) {
+  // opts.solveCaptchaIfFound: if true, solve captcha on each redirect target
+  const {
+    solveCaptchaIfFound = false,
+    capsolverKey = null,
+    captchaEnabled = false,
+    proxyConfig = null,
+  } = opts;
+
   let lastUrl;
   try {
     lastUrl = page.url();
@@ -274,6 +282,7 @@ async function waitForAllRedirects(page, maxWaitMs = 30000) {
   let stableSince = Date.now();
   const deadline = Date.now() + maxWaitMs;
   const STABILITY_MS = 3000;
+  const seenUrls = new Set([lastUrl]);
 
   while (Date.now() < deadline) {
     await page.waitForTimeout(500);
@@ -283,6 +292,7 @@ async function waitForAllRedirects(page, maxWaitMs = 30000) {
     } catch (_) {
       break;
     }
+
     if (currentUrl !== lastUrl) {
       console.log(`   Redirect: ${lastUrl} -> ${currentUrl}`);
       lastUrl = currentUrl;
@@ -290,6 +300,34 @@ async function waitForAllRedirects(page, maxWaitMs = 30000) {
       await page
         .waitForLoadState("domcontentloaded", { timeout: 10000 })
         .catch(() => {});
+
+      // Check for captcha on each new URL we land on
+      if (
+        solveCaptchaIfFound &&
+        captchaEnabled &&
+        capsolverKey &&
+        !seenUrls.has(currentUrl)
+      ) {
+        seenUrls.add(currentUrl);
+        try {
+          const quickCheck = await captchaSolver.detectChallenges(page);
+          if (quickCheck.length > 0) {
+            console.log(
+              `   [redirect-${currentUrl.slice(
+                0,
+                50
+              )}] captcha found mid-redirect, solving...`
+            );
+            await captchaSolver.solveAllCaptchas(
+              page,
+              capsolverKey,
+              captchaEnabled,
+              proxyConfig
+            );
+            stableSince = Date.now(); // reset timer after solve since URL might change
+          }
+        } catch (_) {}
+      }
     } else if (Date.now() - stableSince >= STABILITY_MS) {
       await page
         .waitForLoadState("networkidle", { timeout: 5000 })
@@ -352,6 +390,7 @@ async function checkAndSolveCaptcha(
   proxyConfig,
   label
 ) {
+  console.log(`   [${label}] Checking for captchas...`);
   const result = await captchaSolver.solveAllCaptchas(
     page,
     capsolverKey,
@@ -359,21 +398,11 @@ async function checkAndSolveCaptcha(
     proxyConfig
   );
   if (result.solved) {
-    console.log(`   [${label}] Captcha(s) solved: ${result.types.join(", ")}`);
-    await waitForAllRedirects(page, 20000);
-    const recheck = await captchaSolver.detectChallenges(page);
-    if (recheck.length > 0) {
-      console.log(`   [${label}] Still detected after solve, retrying once...`);
-      await captchaSolver.solveAllCaptchas(
-        page,
-        capsolverKey,
-        captchaEnabled,
-        proxyConfig
-      );
-      await waitForAllRedirects(page, 15000);
-    }
+    console.log(`   [${label}] Solved: ${result.types.join(", ")}`);
   } else if (result.error) {
-    console.log(`   [${label}] Captcha solve failed: ${result.error}`);
+    console.log(`   [${label}] Solve failed: ${result.error}`);
+  } else {
+    console.log(`   [${label}] No captcha found`);
   }
   return result;
 }
@@ -387,15 +416,23 @@ async function executeClick(
   timeoutMs = 120000
 ) {
   const allCaptchaTypes = [];
+  const captchaOpts = {
+    solveCaptchaIfFound: true,
+    capsolverKey,
+    captchaEnabled,
+    proxyConfig,
+  };
 
   try {
     console.log(`   Navigating to ${url} (timeout ${timeoutMs}ms)`);
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
     await page.waitForTimeout(2000);
 
-    console.log(`   Waiting for all redirects to complete...`);
-    await waitForAllRedirects(page, 30000);
+    // Pass 1: navigate + solve captchas during redirects
+    console.log(`   Waiting for all redirects (auto-solving captchas)...`);
+    await waitForAllRedirects(page, 30000, captchaOpts);
 
+    // Pass 2: explicit solve on landing page
     const step1 = await checkAndSolveCaptcha(
       page,
       capsolverKey,
@@ -404,6 +441,9 @@ async function executeClick(
       "after-nav"
     );
     if (step1.solved) allCaptchaTypes.push(...step1.types);
+
+    // If solve triggered another redirect, follow + solve again
+    await waitForAllRedirects(page, 15000, captchaOpts);
 
     console.log("   Performing smooth scroll + mouse movement...");
     try {
@@ -416,8 +456,8 @@ async function executeClick(
       await humanMouseMove(page);
     } catch (_) {}
 
-    console.log("   Final redirect check after scroll...");
-    await waitForAllRedirects(page, 10000);
+    console.log("   Redirect check after scroll...");
+    await waitForAllRedirects(page, 10000, captchaOpts);
 
     const step2 = await checkAndSolveCaptcha(
       page,
@@ -426,10 +466,15 @@ async function executeClick(
       proxyConfig,
       "after-scroll"
     );
-    if (step2.solved) allCaptchaTypes.push(...step2.types);
+    if (step2.solved) {
+      allCaptchaTypes.push(...step2.types);
+      await waitForAllRedirects(page, 15000, captchaOpts);
+    }
 
     await waitForScriptsToLoad(page, 20000);
 
+    // Final captcha check on final URL — this is critical, captchas like
+    // recaptcha enterprise often appear on the final destination page
     const step3 = await checkAndSolveCaptcha(
       page,
       capsolverKey,
@@ -439,16 +484,35 @@ async function executeClick(
     );
     if (step3.solved) {
       allCaptchaTypes.push(...step3.types);
-      await waitForAllRedirects(page, 15000);
+      await waitForAllRedirects(page, 15000, captchaOpts);
       await waitForScriptsToLoad(page, 10000);
     }
 
+    // ONE MORE pass — make absolutely sure final URL is captcha-free
+    const step4 = await checkAndSolveCaptcha(
+      page,
+      capsolverKey,
+      captchaEnabled,
+      proxyConfig,
+      "final-verify"
+    );
+    if (step4.solved) {
+      allCaptchaTypes.push(...step4.types);
+      await waitForAllRedirects(page, 10000, captchaOpts);
+    }
+
     const finalUrl = page.url();
-    const userAgent = await page.evaluate(() => navigator.userAgent);
+    const userAgent = await page
+      .evaluate(() => navigator.userAgent)
+      .catch(() => "");
     const captchaSolved = allCaptchaTypes.length > 0;
-    console.log(`   Final URL after all redirects + scripts: ${finalUrl}`);
+    console.log(`   Final URL: ${finalUrl}`);
     if (captchaSolved) {
-      console.log(`   Total captchas solved: ${allCaptchaTypes.join(", ")}`);
+      console.log(
+        `   All captchas solved this click: ${[
+          ...new Set(allCaptchaTypes),
+        ].join(", ")}`
+      );
     }
 
     return {
@@ -456,7 +520,7 @@ async function executeClick(
       finalUrl,
       userAgent,
       captchaSolved,
-      captchaTypes: allCaptchaTypes,
+      captchaTypes: [...new Set(allCaptchaTypes)],
     };
   } catch (err) {
     console.error(`   Click execution error: ${err.message}`);
