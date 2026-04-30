@@ -668,7 +668,7 @@ async function tryManualProxies(campaignId, countryCode) {
   return null;
 }
 
-clickQueue.process(5, async (job) => {
+clickQueue.process(1, async (job) => {
   memoryManager.checkMemoryUsage();
   const startTime = Date.now();
   console.log("\n========== JOB START ==========");

@@ -24,7 +24,7 @@ module.exports = {
     {
       name: "xml-feed-worker",
       script: "./src/workers/clickWorker.js",
-      instances: 5,
+      instances: 1,
       exec_mode: "fork",
       node_args: "--max-old-space-size=8192 --max-semi-space-size=3072 --expose-gc",
       env: {
