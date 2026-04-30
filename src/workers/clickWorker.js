@@ -78,67 +78,51 @@ function claimNextItem(campaignId, feedId, campaign) {
     SET locked_until = datetime('now', '+10 minutes')
     WHERE id = (
       SELECT fi.id FROM feed_items fi
-      LEFT JOIN (
-        SELECT feed_item_id, COUNT(*) as click_count, MAX(timestamp) as last_clicked
-        FROM clicks
-        WHERE campaign_id = ?
-          AND timestamp >= datetime('now', 'start of day')
-          AND status = 'success'
-        GROUP BY feed_item_id
-      ) c ON c.feed_item_id = fi.id
       WHERE fi.feed_id = ?
         AND (fi.locked_until IS NULL OR fi.locked_until < datetime('now'))
+        AND fi.is_active = 1
   `;
-
-  const params = [campaignId, feedId];
+  const params = [feedId];
 
   if (activeKeyword) {
-    baseSql += ` AND (LOWER(fi.title) LIKE ? OR LOWER(fi.description) LIKE ?)`;
-    const pattern = `%${activeKeyword}%`;
-    params.push(pattern, pattern);
+    baseSql += ` AND LOWER(fi.title) LIKE ?`;
+    params.push(`%${activeKeyword}%`);
   }
 
   baseSql += `
-      ORDER BY COALESCE(c.click_count, 0) ASC,
-               COALESCE(c.last_clicked, '1970-01-01') ASC,
-               fi.id ASC
+      ORDER BY fi.last_clicked_at ASC NULLS FIRST, fi.id ASC
       LIMIT 1
     )
-    RETURNING id, url, title, country
+    RETURNING *
   `;
 
-  let item = db.prepare(baseSql).get(...params);
+  const row = db.prepare(baseSql).get(...params);
 
-  if (!item && activeKeyword) {
+  if (!row && activeKeyword) {
     console.log(
-      `No items match keyword "${activeKeyword}", falling back to any item`
+      `No items matching keyword "${activeKeyword}", falling back to any item`
     );
-    const fallbackSql = `
+    const fallback = db
+      .prepare(
+        `
       UPDATE feed_items
       SET locked_until = datetime('now', '+10 minutes')
       WHERE id = (
         SELECT fi.id FROM feed_items fi
-        LEFT JOIN (
-          SELECT feed_item_id, COUNT(*) as click_count, MAX(timestamp) as last_clicked
-          FROM clicks
-          WHERE campaign_id = ?
-            AND timestamp >= datetime('now', 'start of day')
-            AND status = 'success'
-          GROUP BY feed_item_id
-        ) c ON c.feed_item_id = fi.id
         WHERE fi.feed_id = ?
           AND (fi.locked_until IS NULL OR fi.locked_until < datetime('now'))
-        ORDER BY COALESCE(c.click_count, 0) ASC,
-                 COALESCE(c.last_clicked, '1970-01-01') ASC,
-                 fi.id ASC
+          AND fi.is_active = 1
+        ORDER BY fi.last_clicked_at ASC NULLS FIRST, fi.id ASC
         LIMIT 1
       )
-      RETURNING id, url, title, country
-    `;
-    item = db.prepare(fallbackSql).get(campaignId, feedId);
+      RETURNING *
+    `
+      )
+      .get(feedId);
+    return fallback || null;
   }
 
-  return item;
+  return row || null;
 }
 
 async function smoothScroll(page) {
@@ -150,12 +134,10 @@ async function smoothScroll(page) {
     for (let i = 0; i <= steps; i++) {
       const current = (scrollHeight / steps) * i;
       window.scrollTo({ top: current, behavior: "smooth" });
-      // human-like random pause between scrolls
       const delay =
         80 + Math.random() * 150 + (i % 4 === 0 ? Math.random() * 400 : 0);
       await new Promise((r) => setTimeout(r, delay));
     }
-    // scroll back up a bit like a real user
     await new Promise((r) => setTimeout(r, 300 + Math.random() * 200));
     window.scrollTo({ top: scrollHeight * 0.6, behavior: "smooth" });
     await new Promise((r) => setTimeout(r, 400 + Math.random() * 300));
@@ -166,7 +148,6 @@ async function humanMouseMove(page) {
   try {
     const vp = page.viewportSize();
     if (!vp) return;
-    // move mouse in a natural arc
     const points = [
       {
         x: Math.floor(vp.width * 0.3 + Math.random() * 100),
@@ -182,8 +163,8 @@ async function humanMouseMove(page) {
       },
     ];
     for (const p of points) {
-      await page.mouse.move(p.x, p.y, { steps: 8 });
-      await page.waitForTimeout(150 + Math.floor(Math.random() * 200));
+      await page.mouse.move(p.x, p.y, { steps: 10 });
+      await page.waitForTimeout(150 + Math.floor(Math.random() * 250));
     }
   } catch (_) {}
 }
@@ -265,7 +246,6 @@ async function getIpAndCountryViaProxy(proxyConfig) {
 }
 
 async function waitForAllRedirects(page, maxWaitMs = 30000, opts = {}) {
-  // opts.solveCaptchaIfFound: if true, solve captcha on each redirect target
   const {
     solveCaptchaIfFound = false,
     capsolverKey = null,
@@ -294,14 +274,15 @@ async function waitForAllRedirects(page, maxWaitMs = 30000, opts = {}) {
     }
 
     if (currentUrl !== lastUrl) {
-      console.log(`   Redirect: ${lastUrl} -> ${currentUrl}`);
+      console.log(
+        `   Redirect: ${lastUrl.slice(0, 60)} → ${currentUrl.slice(0, 60)}`
+      );
       lastUrl = currentUrl;
       stableSince = Date.now();
       await page
         .waitForLoadState("domcontentloaded", { timeout: 10000 })
         .catch(() => {});
 
-      // Check for captcha on each new URL we land on
       if (
         solveCaptchaIfFound &&
         captchaEnabled &&
@@ -313,10 +294,9 @@ async function waitForAllRedirects(page, maxWaitMs = 30000, opts = {}) {
           const quickCheck = await captchaSolver.detectChallenges(page);
           if (quickCheck.length > 0) {
             console.log(
-              `   [redirect-${currentUrl.slice(
-                0,
-                50
-              )}] captcha found mid-redirect, solving...`
+              `   Captcha found mid-redirect (${quickCheck
+                .map((c) => c.type)
+                .join(", ")}), solving...`
             );
             await captchaSolver.solveAllCaptchas(
               page,
@@ -324,7 +304,7 @@ async function waitForAllRedirects(page, maxWaitMs = 30000, opts = {}) {
               captchaEnabled,
               proxyConfig
             );
-            stableSince = Date.now(); // reset timer after solve since URL might change
+            stableSince = Date.now();
           }
         } catch (_) {}
       }
@@ -343,44 +323,30 @@ async function waitForAllRedirects(page, maxWaitMs = 30000, opts = {}) {
 }
 
 async function waitForScriptsToLoad(page, maxWaitMs = 20000) {
-  console.log(`   Waiting for scripts to fully load on final page...`);
-  const deadline = Date.now() + maxWaitMs;
-
+  console.log(`   Waiting for scripts to fully load...`);
   try {
     await page.waitForLoadState("load", { timeout: maxWaitMs }).catch(() => {});
   } catch (_) {}
-
   try {
     await page
       .waitForLoadState("networkidle", { timeout: 10000 })
       .catch(() => {});
   } catch (_) {}
-
-  const remaining = Math.max(0, deadline - Date.now());
+  const remaining = Math.max(0, maxWaitMs - 5000);
   if (remaining > 0) {
-    try {
-      await page
-        .waitForFunction(
-          () => {
-            if (document.readyState !== "complete") return false;
-            if (
-              typeof window.jQuery !== "undefined" &&
-              window.jQuery.active > 0
-            )
-              return false;
-            const pendingImgs = Array.from(document.images).filter(
-              (img) => !img.complete
-            );
-            return pendingImgs.length === 0;
-          },
-          { timeout: remaining, polling: 500 }
-        )
-        .catch(() => {});
-    } catch (_) {}
+    await page
+      .waitForFunction(
+        () => {
+          if (document.readyState !== "complete") return false;
+          if (typeof window.jQuery !== "undefined" && window.jQuery.active > 0)
+            return false;
+          return Array.from(document.images).every((img) => img.complete);
+        },
+        { timeout: remaining, polling: 500 }
+      )
+      .catch(() => {});
   }
-
   await page.waitForTimeout(2000);
-  console.log(`   Scripts loaded, page is fully ready`);
 }
 
 async function checkAndSolveCaptcha(
@@ -400,9 +366,9 @@ async function checkAndSolveCaptcha(
   if (result.solved) {
     console.log(`   [${label}] Solved: ${result.types.join(", ")}`);
   } else if (result.error) {
-    console.log(`   [${label}] Solve failed: ${result.error}`);
+    console.log(`   [${label}] Error: ${result.error}`);
   } else {
-    console.log(`   [${label}] No captcha found`);
+    console.log(`   [${label}] No captcha`);
   }
   return result;
 }
@@ -424,15 +390,15 @@ async function executeClick(
   };
 
   try {
-    console.log(`   Navigating to ${url} (timeout ${timeoutMs}ms)`);
+    console.log(`   Navigating to ${url}`);
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
     await page.waitForTimeout(2000);
 
-    // Pass 1: navigate + solve captchas during redirects
-    console.log(`   Waiting for all redirects (auto-solving captchas)...`);
+    // Checkpoint 1: solve captchas during initial redirect chain
+    console.log(`   Waiting for redirects (auto-solving captchas)...`);
     await waitForAllRedirects(page, 30000, captchaOpts);
 
-    // Pass 2: explicit solve on landing page
+    // Checkpoint 2: solve on landing page
     const step1 = await checkAndSolveCaptcha(
       page,
       capsolverKey,
@@ -441,11 +407,10 @@ async function executeClick(
       "after-nav"
     );
     if (step1.solved) allCaptchaTypes.push(...step1.types);
-
-    // If solve triggered another redirect, follow + solve again
     await waitForAllRedirects(page, 15000, captchaOpts);
 
-    console.log("   Performing smooth scroll + mouse movement...");
+    // Human behavior
+    console.log("   Human scroll + mouse...");
     try {
       await humanMouseMove(page);
     } catch (_) {}
@@ -456,9 +421,9 @@ async function executeClick(
       await humanMouseMove(page);
     } catch (_) {}
 
-    console.log("   Redirect check after scroll...");
     await waitForAllRedirects(page, 10000, captchaOpts);
 
+    // Checkpoint 3: after scroll
     const step2 = await checkAndSolveCaptcha(
       page,
       capsolverKey,
@@ -473,8 +438,7 @@ async function executeClick(
 
     await waitForScriptsToLoad(page, 20000);
 
-    // Final captcha check on final URL — this is critical, captchas like
-    // recaptcha enterprise often appear on the final destination page
+    // Checkpoint 4: final page loaded
     const step3 = await checkAndSolveCaptcha(
       page,
       capsolverKey,
@@ -488,17 +452,30 @@ async function executeClick(
       await waitForScriptsToLoad(page, 10000);
     }
 
-    // ONE MORE pass — make absolutely sure final URL is captcha-free
-    const step4 = await checkAndSolveCaptcha(
-      page,
-      capsolverKey,
-      captchaEnabled,
-      proxyConfig,
-      "final-verify"
+    // Checkpoint 5: FINAL VERIFICATION — 3 attempts, must be clean before we quit
+    console.log(
+      "   [final-verify] Verifying page is captcha-free (up to 3 attempts)..."
     );
-    if (step4.solved) {
-      allCaptchaTypes.push(...step4.types);
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const remaining = await captchaSolver.detectChallenges(page);
+      if (remaining.length === 0) {
+        console.log(`   [final-verify] Clean ✓ (attempt ${attempt}/3)`);
+        break;
+      }
+      console.log(
+        `   [final-verify] Still has captcha (attempt ${attempt}/3): ${remaining
+          .map((c) => c.type)
+          .join(", ")} — solving...`
+      );
+      const finalSolve = await captchaSolver.solveAllCaptchas(
+        page,
+        capsolverKey,
+        captchaEnabled,
+        proxyConfig
+      );
+      if (finalSolve.solved) allCaptchaTypes.push(...finalSolve.types);
       await waitForAllRedirects(page, 10000, captchaOpts);
+      await sleep(2000);
     }
 
     const finalUrl = page.url();
@@ -509,9 +486,7 @@ async function executeClick(
     console.log(`   Final URL: ${finalUrl}`);
     if (captchaSolved) {
       console.log(
-        `   All captchas solved this click: ${[
-          ...new Set(allCaptchaTypes),
-        ].join(", ")}`
+        `   Captchas solved: ${[...new Set(allCaptchaTypes)].join(", ")}`
       );
     }
 
@@ -523,7 +498,7 @@ async function executeClick(
       captchaTypes: [...new Set(allCaptchaTypes)],
     };
   } catch (err) {
-    console.error(`   Click execution error: ${err.message}`);
+    console.error(`   Click error: ${err.message}`);
     return { success: false, errorMessage: err.message };
   }
 }
@@ -587,11 +562,7 @@ async function tryProviderProxies(providerName, countryCode, campaignId) {
       );
       continue;
     }
-    console.log(
-      `Probing ${providerName} proxy ${i + 1}/${maxProbes} (${
-        candidate.proxyKey
-      })`
-    );
+    console.log(`Probing ${providerName} proxy ${i + 1}/${maxProbes}`);
     const ipInfo = await getIpAndCountryViaProxy(candidateConfig);
     if (!ipInfo.ip) {
       console.log(`   Probe failed, trying next`);
@@ -602,7 +573,7 @@ async function tryProviderProxies(providerName, countryCode, campaignId) {
       ipInfo.country.toUpperCase() !== countryCode.toUpperCase()
     ) {
       console.log(
-        `   REJECTED: Exit IP ${ipInfo.ip} is in ${
+        `   REJECTED: IP ${ipInfo.ip} in ${
           ipInfo.country || "unknown"
         }, not ${countryCode}`
       );
@@ -610,9 +581,7 @@ async function tryProviderProxies(providerName, countryCode, campaignId) {
     }
     const freshUsedIPs = getUsedIpsToday(campaignId);
     if (freshUsedIPs.includes(ipInfo.ip)) {
-      console.log(
-        `   REJECTED: IP ${ipInfo.ip} already used today (fresh check)`
-      );
+      console.log(`   REJECTED: IP ${ipInfo.ip} already used today`);
       continue;
     }
     console.log(
@@ -632,16 +601,11 @@ async function tryProviderProxies(providerName, countryCode, campaignId) {
 
 async function tryHostedProxies(countryCode, campaignId) {
   const providers = proxyProvider.getActiveProviders();
-
   if (providers.length === 0) {
-    console.log(
-      "No hosted proxy provider enabled (set NOVA_ENABLED=true or KIND_ENABLED=true)"
-    );
+    console.log("No hosted proxy provider enabled");
     return null;
   }
-
-  console.log(`Active providers in priority order: ${providers.join(" -> ")}`);
-
+  console.log(`Active providers: ${providers.join(" -> ")}`);
   for (const providerName of providers) {
     const result = await tryProviderProxies(
       providerName,
@@ -649,11 +613,8 @@ async function tryHostedProxies(countryCode, campaignId) {
       campaignId
     );
     if (result) return result;
-    console.log(
-      `${providerName} exhausted for ${countryCode}, trying next provider`
-    );
+    console.log(`${providerName} exhausted for ${countryCode}`);
   }
-
   return null;
 }
 
@@ -695,7 +656,6 @@ async function tryManualProxies(campaignId, countryCode) {
       );
       continue;
     }
-
     console.log(`   Manual proxy ACCEPTED: IP ${ipInfo.ip}`);
     return {
       proxyConfig: mpConfig,
@@ -722,56 +682,28 @@ clickQueue.process(1, async (job) => {
     console.log(`Campaign ${campaignId} not active - skipping`);
     return { skipped: true, reason: "Inactive" };
   }
-  console.log(`Campaign: ${campaign.name} (Feed ID: ${campaign.feed_id})`);
 
-  let selectedProfile;
-  if (campaign.browser_profile === "desktop")
-    selectedProfile = getRandomDesktopProfile();
-  else if (campaign.browser_profile === "mobile")
-    selectedProfile = getRandomMobileProfile();
-  else selectedProfile = getRandomProfile();
-  console.log(`Selected browser profile: ${selectedProfile.type}`);
-
-  const now = nowInTimezone();
-  const start = new Date(now);
-  const [startHour, startMinute] = campaign.start_time.split(":");
-  start.setHours(parseInt(startHour), parseInt(startMinute), 0, 0);
-  const end = new Date(now);
-  const [endHour, endMinute] = campaign.end_time.split(":");
-  end.setHours(parseInt(endHour), parseInt(endMinute), 0, 0);
-  if (now < start || now > end) {
-    console.log(`Outside active hours - skipping`);
-    return { skipped: true, reason: "Outside hours" };
-  }
-
-  if (campaign.hourly_click_limit && campaign.hourly_click_limit > 0) {
-    const hourStart = new Date(now);
-    hourStart.setMinutes(0, 0, 0);
-    const hourEnd = new Date(hourStart);
-    hourEnd.setHours(hourStart.getHours() + 1);
-    const clicksThisHour = db
-      .prepare(
-        `SELECT COUNT(*) as count FROM clicks WHERE campaign_id = ? AND timestamp BETWEEN ? AND ?`
-      )
-      .get(campaignId, hourStart.toISOString(), hourEnd.toISOString()).count;
-    if (clicksThisHour >= campaign.hourly_click_limit) {
-      console.log(`Hourly limit reached - skipping`);
-      return { skipped: true, reason: "Hourly limit exceeded" };
-    }
-  }
-
-  const item = claimNextItem(campaignId, campaign.feed_id, campaign);
+  const feedId = campaign.feed_id;
+  const item = claimNextItem(campaignId, feedId, campaign);
   if (!item) {
-    console.log(`No items available for campaign ${campaignId}`);
+    console.log(`No available items for campaign ${campaignId}`);
     return { skipped: true, reason: "No items" };
   }
-  console.log(`Claimed item ID ${item.id}: ${item.title.substring(0, 60)}`);
+
+  console.log(`Item: [${item.id}] ${item.title} → ${item.url}`);
+
+  const selectedProfile = getRandomProfile();
+  console.log(
+    `Browser profile: ${
+      selectedProfile.type
+    } / ${selectedProfile.userAgent.slice(0, 60)}...`
+  );
 
   let proxyConfig = null;
   let proxyRecord = null;
   let ipAddress = null;
   let ipCountry = null;
-  let proxySource = "none";
+  let proxySource = "direct";
 
   let countryToUse = null;
   if (campaign.target_country && campaign.target_country !== "Remote") {
@@ -851,7 +783,7 @@ clickQueue.process(1, async (job) => {
         console.log(
           `Direct IP in ${
             ipInfo.country || "unknown"
-          } does not match ${countryCode} - SKIPPING CLICK`
+          } does not match ${countryCode} - SKIPPING`
         );
         db.prepare(
           "UPDATE feed_items SET locked_until = NULL WHERE id = ?"
@@ -871,7 +803,7 @@ clickQueue.process(1, async (job) => {
     const finalCheck = getUsedIpsToday(campaignId);
     if (finalCheck.includes(ipAddress)) {
       console.log(
-        `FINAL CHECK FAIL: IP ${ipAddress} was used by another job - SKIPPING`
+        `FINAL CHECK FAIL: IP ${ipAddress} raced with another job - SKIPPING`
       );
       db.prepare("UPDATE feed_items SET locked_until = NULL WHERE id = ?").run(
         item.id
@@ -919,10 +851,13 @@ clickQueue.process(1, async (job) => {
         "--no-first-run",
         "--no-default-browser-check",
         "--disable-background-networking",
+        "--disable-infobars",
+        "--window-size=1280,800",
       ],
     };
     if (proxyConfig) launchOptions.proxy = proxyConfig;
     browser = await chromium.launch(launchOptions);
+
     const context = await browser.newContext({
       ignoreHTTPSErrors: true,
       userAgent: selectedProfile.userAgent,
@@ -930,18 +865,45 @@ clickQueue.process(1, async (job) => {
       locale: "en-US",
       timezoneId: "America/New_York",
       permissions: ["geolocation"],
+      geolocation: { latitude: 40.7128, longitude: -74.006 },
       extraHTTPHeaders: {
         "Accept-Language": "en-US,en;q=0.9",
         Accept:
           "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
         "Accept-Encoding": "gzip, deflate, br",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
       },
     });
 
     await context.addInitScript(() => {
+      // Core bot detection evasion
       Object.defineProperty(navigator, "webdriver", { get: () => undefined });
       Object.defineProperty(navigator, "plugins", {
-        get: () => [1, 2, 3, 4, 5],
+        get: () => {
+          const arr = [
+            {
+              name: "Chrome PDF Plugin",
+              filename: "internal-pdf-viewer",
+              description: "Portable Document Format",
+            },
+            {
+              name: "Chrome PDF Viewer",
+              filename: "mhjfbmdgcfjbbpaeojofohoefgiehjai",
+              description: "",
+            },
+            {
+              name: "Native Client",
+              filename: "internal-nacl-plugin",
+              description: "",
+            },
+          ];
+          arr.__proto__ = PluginArray.prototype;
+          return arr;
+        },
       });
       Object.defineProperty(navigator, "languages", {
         get: () => ["en-US", "en"],
@@ -949,23 +911,92 @@ clickQueue.process(1, async (job) => {
       Object.defineProperty(navigator, "platform", { get: () => "Win32" });
       Object.defineProperty(navigator, "hardwareConcurrency", { get: () => 8 });
       Object.defineProperty(navigator, "deviceMemory", { get: () => 8 });
+      Object.defineProperty(navigator, "maxTouchPoints", { get: () => 0 });
+
+      // Chrome runtime object (missing = instant bot flag)
       window.chrome = {
-        runtime: {},
-        loadTimes: () => {},
-        csi: () => {},
+        runtime: {
+          id: undefined,
+          connect: () => {},
+          sendMessage: () => {},
+        },
+        loadTimes: () => ({
+          requestTime: Date.now() / 1000 - 0.5,
+          startLoadTime: Date.now() / 1000 - 0.4,
+          commitLoadTime: Date.now() / 1000 - 0.3,
+          finishDocumentLoadTime: Date.now() / 1000 - 0.1,
+          finishLoadTime: Date.now() / 1000,
+          firstPaintTime: Date.now() / 1000 - 0.2,
+          firstPaintAfterLoadTime: 0,
+          navigationType: "Other",
+          wasFetchedViaSpdy: false,
+          wasNpnNegotiated: false,
+          npnNegotiatedProtocol: "unknown",
+          wasAlternateProtocolAvailable: false,
+          connectionInfo: "http/1.1",
+        }),
+        csi: () => ({
+          startE: Date.now() - 500,
+          onloadT: Date.now() - 100,
+          pageT: Date.now() - 50,
+          tran: 15,
+        }),
         app: {},
       };
-      const getParam = RTCPeerConnection.prototype.createOffer;
+
+      // Screen
       Object.defineProperty(screen, "colorDepth", { get: () => 24 });
       Object.defineProperty(screen, "pixelDepth", { get: () => 24 });
+      Object.defineProperty(window, "outerWidth", { get: () => 1280 });
+      Object.defineProperty(window, "outerHeight", { get: () => 800 });
+
+      // Fix permissions query
       const origQuery = window.navigator.permissions.query;
       window.navigator.permissions.query = (params) =>
         params.name === "notifications"
           ? Promise.resolve({ state: Notification.permission })
           : origQuery(params);
+
+      // WebGL vendor/renderer (headless returns "Google SwiftShader" = bot flag)
+      const getParam = WebGLRenderingContext.prototype.getParameter;
+      WebGLRenderingContext.prototype.getParameter = function (parameter) {
+        if (parameter === 37445) return "Intel Inc.";
+        if (parameter === 37446) return "Intel Iris OpenGL Engine";
+        return getParam.call(this, parameter);
+      };
+
+      // Remove headless-specific properties
+      delete navigator.__proto__.webdriver;
+
+      // Consistent connection rtt
+      if (navigator.connection) {
+        Object.defineProperty(navigator.connection, "rtt", { get: () => 100 });
+        Object.defineProperty(navigator.connection, "downlink", {
+          get: () => 10,
+        });
+        Object.defineProperty(navigator.connection, "effectiveType", {
+          get: () => "4g",
+        });
+      }
     });
 
     const page = await context.newPage();
+
+    // Block obvious bot detection scripts to reduce noise (optional but helpful)
+    await page.route("**/*", (route) => {
+      const url = route.request().url();
+      // Block telemetry that just reports bot signals
+      if (
+        url.includes("sentry.io") ||
+        url.includes("datadome.co") ||
+        url.includes("px-cloud.net") ||
+        url.includes("fp.js") ||
+        url.includes("fingerprint.com")
+      ) {
+        return route.abort();
+      }
+      return route.continue();
+    });
 
     const clickResult = await executeClick(
       page,
@@ -1033,4 +1064,4 @@ clickQueue.process(1, async (job) => {
   return { success: result.success, itemId: item.id };
 });
 
-console.log("Click worker started (with full captcha support)");
+console.log("Click worker started (captcha + fingerprint evasion active)");
