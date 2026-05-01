@@ -243,7 +243,16 @@ async function detectChallenges(page) {
       bySiteKey.set(c.siteKey, merged);
     }
 
-    return Array.from(bySiteKey.values());
+    const challenges = Array.from(bySiteKey.values());
+
+    const hasCfChallenge = challenges.some(
+      (c) => c.type === "cloudflare_challenge"
+    );
+    if (hasCfChallenge) {
+      return challenges.filter((c) => c.type !== "turnstile");
+    }
+
+    return challenges;
   } catch (_) {
     return [];
   }
