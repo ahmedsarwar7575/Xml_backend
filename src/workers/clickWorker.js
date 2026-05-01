@@ -455,16 +455,16 @@ async function executeClick(
     }
 
     console.log(
-      "   [final-verify] Verifying page is captcha-free (up to 3 attempts)..."
+      "   [final-verify] Verifying page is captcha-free (up to 2 attempts)..."
     );
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
       const remaining = await captchaSolver.detectChallenges(page);
       if (remaining.length === 0) {
-        console.log(`   [final-verify] Clean ✓ (attempt ${attempt}/3)`);
+        console.log(`   [final-verify] Clean ✓ (attempt ${attempt}/2)`);
         break;
       }
       console.log(
-        `   [final-verify] Still has captcha (attempt ${attempt}/3): ${remaining
+        `   [final-verify] Still has captcha (attempt ${attempt}/2): ${remaining
           .map((c) => c.type)
           .join(", ")} — solving...`
       );
@@ -691,7 +691,7 @@ async function tryManualProxies(campaignId, countryCode) {
   return null;
 }
 
-clickQueue.process(10, async (job) => {
+clickQueue.process(1, async (job) => {
   memoryManager.checkMemoryUsage();
   const startTime = Date.now();
   console.log("\n========== JOB START ==========");

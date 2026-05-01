@@ -627,7 +627,7 @@ async function solveAllCaptchas(
 
   const allSolvedTypes = [];
   let lastError = null;
-  const MAX_ROUNDS = 4;
+  const MAX_ROUNDS = 2;
 
   for (let round = 1; round <= MAX_ROUNDS; round++) {
     let challenges = [];
@@ -651,10 +651,10 @@ async function solveAllCaptchas(
 
     for (const challenge of challenges) {
       let solved = false;
-      for (let attempt = 1; attempt <= 3 && !solved; attempt++) {
+      for (let attempt = 1; attempt <= 2 && !solved; attempt++) {
         try {
           console.log(
-            `     [attempt ${attempt}/3] Solving ${challenge.type}${
+            `     [attempt ${attempt}/2] Solving ${challenge.type}${
               challenge.siteKey ? " key=" + challenge.siteKey.slice(0, 20) : ""
             }`
           );
@@ -668,8 +668,8 @@ async function solveAllCaptchas(
             solved = true;
             allSolvedTypes.push(challenge.type);
             console.log(`     ✓ ${challenge.type} cleared`);
-          } else if (attempt < 3) {
-            console.log(`     Still present, retry ${attempt + 1}/3...`);
+          } else if (attempt < 2) {
+            console.log(`     Still present, retry ${attempt + 1}/2...`);
             await sleep(2000);
           }
         } catch (err) {
