@@ -16,9 +16,15 @@ const {
 const { nowInTimezone } = require("../utils/timezone");
 
 const SCREENSHOT_DIR = path.join(__dirname, "../../screenshots");
+const PROFILE_DIR = path.join(__dirname, "../../browser-profiles");
+
 if (!fs.existsSync(SCREENSHOT_DIR)) {
   fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
 }
+if (!fs.existsSync(PROFILE_DIR)) {
+  fs.mkdirSync(PROFILE_DIR, { recursive: true });
+}
+
 memoryManager.startMemoryMonitor();
 
 function getSetting(key) {
@@ -375,6 +381,7 @@ async function checkAndSolveCaptcha(
 
 async function executeClick(
   page,
+  context,
   url,
   capsolverKey,
   captchaEnabled,
@@ -478,11 +485,35 @@ async function executeClick(
       await sleep(2000);
     }
 
+    // CRITICAL FOR TRACKING: Wait for tracking pixels to fire
+    console.log(
+      "   [TRACKING] Waiting for networkidle + 8s for tracking pixels to fire..."
+    );
+    await page
+      .waitForLoadState("networkidle", { timeout: 10000 })
+      .catch(() => {});
+    await page.waitForTimeout(8000);
+
     const finalUrl = page.url();
     const userAgent = await page
       .evaluate(() => navigator.userAgent)
       .catch(() => "");
     const captchaSolved = allCaptchaTypes.length > 0;
+
+    // VERIFY COOKIES PERSISTED (for debugging tracking issues)
+    const cookies = await context.cookies();
+    console.log(
+      `   [TRACKING] ${cookies.length} cookies set across all domains`
+    );
+    const trackingDomains = [...new Set(cookies.map((c) => c.domain))];
+    if (trackingDomains.length > 0) {
+      console.log(
+        `   [TRACKING] Cookie domains: ${trackingDomains
+          .slice(0, 5)
+          .join(", ")}${trackingDomains.length > 5 ? "..." : ""}`
+      );
+    }
+
     console.log(`   Final URL: ${finalUrl}`);
     if (captchaSolved) {
       console.log(
@@ -668,7 +699,7 @@ async function tryManualProxies(campaignId, countryCode) {
   return null;
 }
 
-clickQueue.process(10, async (job) => {
+clickQueue.process(1, async (job) => {
   memoryManager.checkMemoryUsage();
   const startTime = Date.now();
   console.log("\n========== JOB START ==========");
@@ -826,7 +857,7 @@ clickQueue.process(10, async (job) => {
     }`
   );
 
-  let browser = null;
+  let context = null;
   let result = {
     success: false,
     finalUrl: null,
@@ -838,10 +869,18 @@ clickQueue.process(10, async (job) => {
   let screenshotPath = null;
 
   try {
+    // PERSISTENT CONTEXT: stable fingerprint + cookies across entire session
+    const profilePath = path.join(PROFILE_DIR, `worker-${process.pid}`);
+    if (!fs.existsSync(profilePath)) {
+      fs.mkdirSync(profilePath, { recursive: true });
+    }
+
     const launchOptions = {
       headless,
+      channel: "chrome", // Use real Chrome instead of Chromium for better tracker compatibility
       args: [
         "--disable-blink-features=AutomationControlled",
+        "--disable-features=BlockThirdPartyCookies", // CRITICAL: allow tracking cookies
         "--no-sandbox",
         "--ignore-certificate-errors",
         "--disable-web-security",
@@ -854,11 +893,6 @@ clickQueue.process(10, async (job) => {
         "--disable-infobars",
         "--window-size=1280,800",
       ],
-    };
-    if (proxyConfig) launchOptions.proxy = proxyConfig;
-    browser = await chromium.launch(launchOptions);
-
-    const context = await browser.newContext({
       ignoreHTTPSErrors: true,
       userAgent: selectedProfile.userAgent,
       viewport: selectedProfile.viewport,
@@ -877,7 +911,15 @@ clickQueue.process(10, async (job) => {
         "Sec-Fetch-Site": "none",
         "Sec-Fetch-User": "?1",
       },
-    });
+    };
+
+    if (proxyConfig) launchOptions.proxy = proxyConfig;
+
+    // Launch persistent context (combines browser + context with stable profile)
+    context = await chromium.launchPersistentContext(
+      profilePath,
+      launchOptions
+    );
 
     await context.addInitScript(() => {
       // Core bot detection evasion
@@ -980,12 +1022,25 @@ clickQueue.process(10, async (job) => {
       }
     });
 
-    const page = await context.newPage();
+    // Get or create page from persistent context
+    const pages = context.pages();
+    const page = pages.length > 0 ? pages[0] : await context.newPage();
 
-    // Block obvious bot detection scripts to reduce noise (optional but helpful)
+    // Monitor console for blocked cookie warnings (debugging aid)
+    page.on("console", (msg) => {
+      const text = msg.text();
+      if (
+        text.includes("cookie") ||
+        text.includes("SameSite") ||
+        text.includes("third-party")
+      ) {
+        console.log(`   [BROWSER CONSOLE] ${text}`);
+      }
+    });
+
+    // Block obvious bot detection scripts to reduce noise
     await page.route("**/*", (route) => {
       const url = route.request().url();
-      // Block telemetry that just reports bot signals
       if (
         url.includes("sentry.io") ||
         url.includes("datadome.co") ||
@@ -1000,6 +1055,7 @@ clickQueue.process(10, async (job) => {
 
     const clickResult = await executeClick(
       page,
+      context,
       item.url,
       capsolverKey,
       captchaEnabled,
@@ -1023,7 +1079,7 @@ clickQueue.process(10, async (job) => {
     console.error(`Exception: ${err.message}`);
   }
 
-  if (browser) await browser.close();
+  if (context) await context.close();
 
   const insertClick = db.prepare(`
     INSERT INTO clicks (campaign_id, feed_item_id, proxy_id, status, final_url, ip_address, ip_country, user_agent, browser_type_used, error_message, screenshot_path, timestamp)
@@ -1064,4 +1120,4 @@ clickQueue.process(10, async (job) => {
   return { success: result.success, itemId: item.id };
 });
 
-console.log("Click worker started (captcha + fingerprint evasion active)");
+console.log("Click worker started (persistent context + tracking-optimized)");
