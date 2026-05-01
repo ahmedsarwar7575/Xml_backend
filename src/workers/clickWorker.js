@@ -401,11 +401,9 @@ async function executeClick(
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
     await page.waitForTimeout(2000);
 
-    // Checkpoint 1: solve captchas during initial redirect chain
     console.log(`   Waiting for redirects (auto-solving captchas)...`);
     await waitForAllRedirects(page, 30000, captchaOpts);
 
-    // Checkpoint 2: solve on landing page
     const step1 = await checkAndSolveCaptcha(
       page,
       capsolverKey,
@@ -416,7 +414,6 @@ async function executeClick(
     if (step1.solved) allCaptchaTypes.push(...step1.types);
     await waitForAllRedirects(page, 15000, captchaOpts);
 
-    // Human behavior
     console.log("   Human scroll + mouse...");
     try {
       await humanMouseMove(page);
@@ -430,7 +427,6 @@ async function executeClick(
 
     await waitForAllRedirects(page, 10000, captchaOpts);
 
-    // Checkpoint 3: after scroll
     const step2 = await checkAndSolveCaptcha(
       page,
       capsolverKey,
@@ -445,7 +441,6 @@ async function executeClick(
 
     await waitForScriptsToLoad(page, 20000);
 
-    // Checkpoint 4: final page loaded
     const step3 = await checkAndSolveCaptcha(
       page,
       capsolverKey,
@@ -459,7 +454,6 @@ async function executeClick(
       await waitForScriptsToLoad(page, 10000);
     }
 
-    // Checkpoint 5: FINAL VERIFICATION — 3 attempts, must be clean before we quit
     console.log(
       "   [final-verify] Verifying page is captcha-free (up to 3 attempts)..."
     );
@@ -485,7 +479,6 @@ async function executeClick(
       await sleep(2000);
     }
 
-    // CRITICAL FOR TRACKING: Wait for tracking pixels to fire
     console.log(
       "   [TRACKING] Waiting for networkidle + 8s for tracking pixels to fire..."
     );
@@ -500,7 +493,6 @@ async function executeClick(
       .catch(() => "");
     const captchaSolved = allCaptchaTypes.length > 0;
 
-    // VERIFY COOKIES PERSISTED (for debugging tracking issues)
     const cookies = await context.cookies();
     console.log(
       `   [TRACKING] ${cookies.length} cookies set across all domains`
@@ -699,7 +691,7 @@ async function tryManualProxies(campaignId, countryCode) {
   return null;
 }
 
-clickQueue.process(10, async (job) => {
+clickQueue.process(1, async (job) => {
   memoryManager.checkMemoryUsage();
   const startTime = Date.now();
   console.log("\n========== JOB START ==========");
@@ -858,6 +850,7 @@ clickQueue.process(10, async (job) => {
   );
 
   let context = null;
+  let profilePath = null;
   let result = {
     success: false,
     finalUrl: null,
@@ -869,18 +862,21 @@ clickQueue.process(10, async (job) => {
   let screenshotPath = null;
 
   try {
-    // PERSISTENT CONTEXT: stable fingerprint + cookies across entire session
-    const profilePath = path.join(PROFILE_DIR, `worker-${process.pid}`);
+    // UNIQUE PROFILE PER JOB (prevents concurrent job conflicts)
+    const jobId = job.id || Date.now();
+    const randomSuffix = Math.random().toString(36).slice(2, 8);
+    profilePath = path.join(PROFILE_DIR, `job-${jobId}-${randomSuffix}`);
+
     if (!fs.existsSync(profilePath)) {
       fs.mkdirSync(profilePath, { recursive: true });
     }
 
     const launchOptions = {
       headless,
-      channel: "chrome", // Use real Chrome instead of Chromium for better tracker compatibility
+      channel: "chrome",
       args: [
         "--disable-blink-features=AutomationControlled",
-        "--disable-features=BlockThirdPartyCookies", // CRITICAL: allow tracking cookies
+        "--disable-features=BlockThirdPartyCookies",
         "--no-sandbox",
         "--ignore-certificate-errors",
         "--disable-web-security",
@@ -915,14 +911,12 @@ clickQueue.process(10, async (job) => {
 
     if (proxyConfig) launchOptions.proxy = proxyConfig;
 
-    // Launch persistent context (combines browser + context with stable profile)
     context = await chromium.launchPersistentContext(
       profilePath,
       launchOptions
     );
 
     await context.addInitScript(() => {
-      // Core bot detection evasion
       Object.defineProperty(navigator, "webdriver", { get: () => undefined });
       Object.defineProperty(navigator, "plugins", {
         get: () => {
@@ -955,7 +949,6 @@ clickQueue.process(10, async (job) => {
       Object.defineProperty(navigator, "deviceMemory", { get: () => 8 });
       Object.defineProperty(navigator, "maxTouchPoints", { get: () => 0 });
 
-      // Chrome runtime object (missing = instant bot flag)
       window.chrome = {
         runtime: {
           id: undefined,
@@ -986,20 +979,17 @@ clickQueue.process(10, async (job) => {
         app: {},
       };
 
-      // Screen
       Object.defineProperty(screen, "colorDepth", { get: () => 24 });
       Object.defineProperty(screen, "pixelDepth", { get: () => 24 });
       Object.defineProperty(window, "outerWidth", { get: () => 1280 });
       Object.defineProperty(window, "outerHeight", { get: () => 800 });
 
-      // Fix permissions query
       const origQuery = window.navigator.permissions.query;
       window.navigator.permissions.query = (params) =>
         params.name === "notifications"
           ? Promise.resolve({ state: Notification.permission })
           : origQuery(params);
 
-      // WebGL vendor/renderer (headless returns "Google SwiftShader" = bot flag)
       const getParam = WebGLRenderingContext.prototype.getParameter;
       WebGLRenderingContext.prototype.getParameter = function (parameter) {
         if (parameter === 37445) return "Intel Inc.";
@@ -1007,10 +997,8 @@ clickQueue.process(10, async (job) => {
         return getParam.call(this, parameter);
       };
 
-      // Remove headless-specific properties
       delete navigator.__proto__.webdriver;
 
-      // Consistent connection rtt
       if (navigator.connection) {
         Object.defineProperty(navigator.connection, "rtt", { get: () => 100 });
         Object.defineProperty(navigator.connection, "downlink", {
@@ -1022,11 +1010,9 @@ clickQueue.process(10, async (job) => {
       }
     });
 
-    // Get or create page from persistent context
     const pages = context.pages();
     const page = pages.length > 0 ? pages[0] : await context.newPage();
 
-    // Monitor console for blocked cookie warnings (debugging aid)
     page.on("console", (msg) => {
       const text = msg.text();
       if (
@@ -1038,7 +1024,6 @@ clickQueue.process(10, async (job) => {
       }
     });
 
-    // Block obvious bot detection scripts to reduce noise
     await page.route("**/*", (route) => {
       const url = route.request().url();
       if (
@@ -1079,7 +1064,23 @@ clickQueue.process(10, async (job) => {
     console.error(`Exception: ${err.message}`);
   }
 
-  if (context) await context.close();
+  // CLEANUP: Close context and delete profile directory
+  if (context) {
+    try {
+      await context.close();
+    } catch (err) {
+      console.error(`   Context close error: ${err.message}`);
+    }
+  }
+
+  if (profilePath && fs.existsSync(profilePath)) {
+    try {
+      fs.rmSync(profilePath, { recursive: true, force: true });
+      console.log(`   Profile cleaned up: ${path.basename(profilePath)}`);
+    } catch (err) {
+      console.error(`   Profile cleanup failed: ${err.message}`);
+    }
+  }
 
   const insertClick = db.prepare(`
     INSERT INTO clicks (campaign_id, feed_item_id, proxy_id, status, final_url, ip_address, ip_country, user_agent, browser_type_used, error_message, screenshot_path, timestamp)
@@ -1120,4 +1121,4 @@ clickQueue.process(10, async (job) => {
   return { success: result.success, itemId: item.id };
 });
 
-console.log("Click worker started (persistent context + tracking-optimized)");
+console.log("Click worker started (persistent context + auto-cleanup)");
