@@ -389,7 +389,6 @@ async function executeClick(
   timeoutMs = 120000
 ) {
   const allCaptchaTypes = [];
-  let captchaAttemptsFailed = false;
   const captchaOpts = {
     solveCaptchaIfFound: true,
     capsolverKey,
@@ -405,24 +404,15 @@ async function executeClick(
     console.log(`   Waiting for redirects (auto-solving captchas)...`);
     await waitForAllRedirects(page, 30000, captchaOpts);
 
-    if (!captchaAttemptsFailed) {
-      const step1 = await checkAndSolveCaptcha(
-        page,
-        capsolverKey,
-        captchaEnabled,
-        proxyConfig,
-        "after-nav"
-      );
-      if (step1.solved) {
-        allCaptchaTypes.push(...step1.types);
-      } else if (step1.error) {
-        captchaAttemptsFailed = true;
-        console.log(
-          "   [CAPTCHA] First checkpoint failed, skipping remaining captcha checks"
-        );
-      }
-      await waitForAllRedirects(page, 15000, captchaOpts);
-    }
+    const step1 = await checkAndSolveCaptcha(
+      page,
+      capsolverKey,
+      captchaEnabled,
+      proxyConfig,
+      "after-nav"
+    );
+    if (step1.solved) allCaptchaTypes.push(...step1.types);
+    await waitForAllRedirects(page, 15000, captchaOpts);
 
     console.log("   Human scroll + mouse...");
     try {
@@ -437,72 +427,56 @@ async function executeClick(
 
     await waitForAllRedirects(page, 10000, captchaOpts);
 
-    if (!captchaAttemptsFailed) {
-      const step2 = await checkAndSolveCaptcha(
-        page,
-        capsolverKey,
-        captchaEnabled,
-        proxyConfig,
-        "after-scroll"
-      );
-      if (step2.solved) {
-        allCaptchaTypes.push(...step2.types);
-        await waitForAllRedirects(page, 15000, captchaOpts);
-      } else if (step2.error) {
-        captchaAttemptsFailed = true;
-        console.log(
-          "   [CAPTCHA] Checkpoint failed, skipping remaining captcha checks"
-        );
-      }
+    const step2 = await checkAndSolveCaptcha(
+      page,
+      capsolverKey,
+      captchaEnabled,
+      proxyConfig,
+      "after-scroll"
+    );
+    if (step2.solved) {
+      allCaptchaTypes.push(...step2.types);
+      await waitForAllRedirects(page, 15000, captchaOpts);
     }
 
     await waitForScriptsToLoad(page, 20000);
 
-    if (!captchaAttemptsFailed) {
-      const step3 = await checkAndSolveCaptcha(
+    const step3 = await checkAndSolveCaptcha(
+      page,
+      capsolverKey,
+      captchaEnabled,
+      proxyConfig,
+      "final-page"
+    );
+    if (step3.solved) {
+      allCaptchaTypes.push(...step3.types);
+      await waitForAllRedirects(page, 15000, captchaOpts);
+      await waitForScriptsToLoad(page, 10000);
+    }
+
+    console.log(
+      "   [final-verify] Verifying page is captcha-free (up to 2 attempts)..."
+    );
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const remaining = await captchaSolver.detectChallenges(page);
+      if (remaining.length === 0) {
+        console.log(`   [final-verify] Clean ✓ (attempt ${attempt}/2)`);
+        break;
+      }
+      console.log(
+        `   [final-verify] Still has captcha (attempt ${attempt}/2): ${remaining
+          .map((c) => c.type)
+          .join(", ")} — solving...`
+      );
+      const finalSolve = await captchaSolver.solveAllCaptchas(
         page,
         capsolverKey,
         captchaEnabled,
-        proxyConfig,
-        "final-page"
+        proxyConfig
       );
-      if (step3.solved) {
-        allCaptchaTypes.push(...step3.types);
-        await waitForAllRedirects(page, 15000, captchaOpts);
-        await waitForScriptsToLoad(page, 10000);
-      } else if (step3.error) {
-        captchaAttemptsFailed = true;
-        console.log(
-          "   [CAPTCHA] Final checkpoint failed, proceeding to complete job"
-        );
-      }
-    }
-
-    if (!captchaAttemptsFailed) {
-      console.log(
-        "   [final-verify] Verifying page is captcha-free (up to 2 attempts)..."
-      );
-      for (let attempt = 1; attempt <= 2; attempt++) {
-        const remaining = await captchaSolver.detectChallenges(page);
-        if (remaining.length === 0) {
-          console.log(`   [final-verify] Clean ✓ (attempt ${attempt}/2)`);
-          break;
-        }
-        console.log(
-          `   [final-verify] Still has captcha (attempt ${attempt}/2): ${remaining
-            .map((c) => c.type)
-            .join(", ")} — solving...`
-        );
-        const finalSolve = await captchaSolver.solveAllCaptchas(
-          page,
-          capsolverKey,
-          captchaEnabled,
-          proxyConfig
-        );
-        if (finalSolve.solved) allCaptchaTypes.push(...finalSolve.types);
-        await waitForAllRedirects(page, 10000, captchaOpts);
-        await sleep(2000);
-      }
+      if (finalSolve.solved) allCaptchaTypes.push(...finalSolve.types);
+      await waitForAllRedirects(page, 10000, captchaOpts);
+      await sleep(2000);
     }
 
     console.log(
