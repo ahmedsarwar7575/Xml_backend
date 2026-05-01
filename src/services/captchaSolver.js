@@ -93,28 +93,7 @@ function toCapsolverProxy(proxyConfig) {
 
 async function detectChallenges(page) {
   try {
-    await page
-      .waitForFunction(
-        () => {
-          const ifrs = document.querySelectorAll("iframe");
-          for (const f of ifrs) {
-            const src = f.getAttribute("src") || "";
-            if (
-              src.includes("challenges.cloudflare.com") ||
-              src.includes("recaptcha") ||
-              src.includes("hcaptcha") ||
-              src.includes("google.com/recaptcha")
-            )
-              return true;
-          }
-          return !!document.querySelector(
-            ".cf-turnstile, .g-recaptcha, .h-captcha, form#challenge-form, [data-sitekey]"
-          );
-        },
-        { timeout: 6000 }
-      )
-      .catch(() => {});
-    await sleep(2000);
+    await sleep(1000);
 
     const allFound = [];
     const frames = page.frames();
@@ -186,8 +165,9 @@ async function detectChallenges(page) {
             if (isCfFull) out.push({ type: "cloudflare_challenge" });
 
             for (const el of document.querySelectorAll(".cf-turnstile")) {
+              if (!el.offsetParent) continue;
               const sk = el.getAttribute("data-sitekey");
-              if (sk && sk.startsWith("0x"))
+              if (sk && sk.startsWith("0x") && sk.length > 10)
                 out.push({
                   type: "turnstile",
                   siteKey: sk,
@@ -195,16 +175,10 @@ async function detectChallenges(page) {
                 });
             }
 
-            for (const el of document.querySelectorAll(
-              ".g-recaptcha, [data-sitekey]"
-            )) {
-              if (
-                el.classList.contains("cf-turnstile") ||
-                el.classList.contains("h-captcha")
-              )
-                continue;
+            for (const el of document.querySelectorAll(".g-recaptcha")) {
+              if (!el.offsetParent) continue;
               const sk = el.getAttribute("data-sitekey");
-              if (!sk || sk.startsWith("0x")) continue;
+              if (!sk || sk.length < 20 || sk.startsWith("0x")) continue;
               let isEnterprise = false;
               for (const s of document.querySelectorAll("script[src]")) {
                 const src = s.getAttribute("src") || "";
@@ -233,8 +207,10 @@ async function detectChallenges(page) {
             }
 
             for (const el of document.querySelectorAll(".h-captcha")) {
+              if (!el.offsetParent) continue;
               const sk = el.getAttribute("data-sitekey");
-              if (sk) out.push({ type: "hcaptcha", siteKey: sk });
+              if (sk && sk.length > 20)
+                out.push({ type: "hcaptcha", siteKey: sk });
             }
 
             return out;
@@ -335,6 +311,11 @@ async function solveCloudflareChallenge(apiKey, page, proxyConfig) {
 async function solveTurnstile(apiKey, page, captcha, proxyConfig) {
   const pageUrl = page.url();
 
+  if (!pageUrl || pageUrl === "about:blank" || !pageUrl.startsWith("http")) {
+    console.log(`   Skipping Turnstile: invalid page URL (${pageUrl})`);
+    return false;
+  }
+
   let sitekey = captcha.siteKey;
 
   // If sitekey not starting with 0x, try extracting from frames
@@ -431,6 +412,20 @@ async function solveRecaptchaV2(
 ) {
   let targetFrame = page.mainFrame();
   let targetUrl = page.url();
+
+  if (
+    !targetUrl ||
+    targetUrl === "about:blank" ||
+    !targetUrl.startsWith("http")
+  ) {
+    console.log(`   Skipping reCAPTCHA: invalid page URL (${targetUrl})`);
+    return false;
+  }
+
+  if (!captcha.siteKey || captcha.siteKey.length < 20) {
+    console.log(`   Skipping reCAPTCHA: invalid sitekey`);
+    return false;
+  }
 
   for (const frame of page.frames()) {
     let furl = "";
@@ -541,9 +536,21 @@ async function solveRecaptchaV2(
 }
 
 async function solveHCaptcha(apiKey, page, captcha) {
+  const pageUrl = page.url();
+
+  if (!pageUrl || pageUrl === "about:blank" || !pageUrl.startsWith("http")) {
+    console.log(`   Skipping hCaptcha: invalid page URL (${pageUrl})`);
+    return false;
+  }
+
+  if (!captcha.siteKey || captcha.siteKey.length < 20) {
+    console.log(`   Skipping hCaptcha: invalid sitekey`);
+    return false;
+  }
+
   const taskPayload = {
     type: "HCaptchaTaskProxyLess",
-    websiteURL: page.url(),
+    websiteURL: pageUrl,
     websiteKey: captcha.siteKey,
   };
   const { taskId } = await capsolverPost(apiKey, "createTask", {
