@@ -394,7 +394,30 @@ async function executeClick(
 
   try {
     console.log(`   Navigating to ${url}`);
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+    try {
+      await page.goto(url, {
+        waitUntil: "domcontentloaded",
+        timeout: timeoutMs,
+      });
+    } catch (navErr) {
+      // Browser/page crashed - retry once after short wait
+      if (
+        navErr.message.includes("Target page") ||
+        navErr.message.includes("browser has been closed") ||
+        navErr.message.includes("context or browser")
+      ) {
+        console.log(
+          `   Nav crash, retrying once: ${navErr.message.slice(0, 60)}`
+        );
+        await sleep(2000);
+        await page.goto(url, {
+          waitUntil: "domcontentloaded",
+          timeout: timeoutMs,
+        });
+      } else {
+        throw navErr;
+      }
+    }
 
     let lastUrl = page.url();
 
