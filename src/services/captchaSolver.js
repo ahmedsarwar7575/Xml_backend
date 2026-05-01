@@ -284,37 +284,44 @@ async function solveCloudflareChallenge(apiKey, page, proxyConfig) {
       .join(":")}:****:****`
   );
 
-  const { taskId } = await capsolverPost(apiKey, "createTask", {
-    task: taskPayload,
-  });
-  const solution = await pollResult(apiKey, taskId, 60, 3000);
+  try {
+    console.log(`   CF: Sending createTask to CapSolver...`);
+    const { taskId } = await capsolverPost(apiKey, "createTask", {
+      task: taskPayload,
+    });
+    console.log(`   CF taskId: ${taskId}, polling...`);
 
-  if (!solution || !solution.token) {
-    throw new Error("CapSolver returned no token for Cloudflare challenge");
+    const solution = await pollResult(apiKey, taskId, 60, 3000);
+
+    if (!solution || !solution.token) {
+      console.log(`   CF ERROR: CapSolver returned no token`);
+      throw new Error("CapSolver returned no token for Cloudflare challenge");
+    }
+
+    console.log(`   CF: Got token, refreshing page...`);
+    const context = page.context();
+    await context.addCookies([
+      {
+        name: "cf_clearance",
+        value: solution.token,
+        domain: new URL(pageUrl).hostname,
+        path: "/",
+      },
+    ]);
+    await page.reload({ waitUntil: "domcontentloaded", timeout: 30000 });
+    await sleep(3000);
+    console.log(`   CF: Solve complete`);
+    return true;
+  } catch (err) {
+    console.log(`   CF ERROR: ${err.message}`);
+    // Log full error details if it's a CapSolver API error
+    if (err.response) {
+      console.log(
+        `   CF ERROR details: ${JSON.stringify(err.response).slice(0, 200)}`
+      );
+    }
+    return false;
   }
-
-  const context = page.context();
-  const hostname = new URL(pageUrl).hostname;
-
-  await context.addCookies([
-    {
-      name: "cf_clearance",
-      value: solution.token,
-      domain: hostname,
-      path: "/",
-      secure: true,
-      httpOnly: true,
-      sameSite: "None",
-    },
-  ]);
-
-  if (solution.userAgent) {
-    await page.setExtraHTTPHeaders({ "user-agent": solution.userAgent });
-  }
-
-  await page.goto(pageUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
-  await sleep(2000);
-  return true;
 }
 
 async function solveTurnstile(apiKey, page, captcha, proxyConfig) {

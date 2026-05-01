@@ -14,7 +14,7 @@ const CAPSOLVER_API_KEY =
 function buildNovaProxy() {
   const session = Math.random().toString(36).substring(2, 12);
   return {
-    proxyStr: `residential.novaproxy.io:12321:a638cacf689e:4f63895ac023_country-us_session-${session}_lifetime-600s`,
+    proxyStr: `residential.novaproxy.io:12321:d590d5a0a881:a0753a0bb901_country-us_session-${session}_lifetime-600s`,
     session,
   };
 }
@@ -24,7 +24,7 @@ async function extractSitekey(url, options = {}) {
   let browser;
   try {
     browser = await chromium.launch({
-      headless: true,
+      headless: false,
       args: ["--disable-blink-features=AutomationControlled", "--no-sandbox"],
     });
     const context = await browser.newContext({
@@ -325,7 +325,7 @@ async function test5_cloudflareChallenge() {
   return solveCapsolver(
     {
       type: "AntiCloudflareTask",
-      websiteURL: "https://nowsecure.nl",
+      websiteURL: "https://www.ziprecruiter.com/ekn/AAKCtwSqBnAumM6LWSfyhYWAV5aofsT4-Nx34tY2Ii9bEdmt9-walK0Q6PiKJVfFVIRYAoHPZPQ-JLHryksBtmpwnpWe7sF840qh0jDIAc_4IlsdwG6shP3Lk-Y8Ox6s1aSlPfxU47ZjBLhFGtOxRgB-vVE86oDYsBzD6rhnpQd00Pw4lvj4nwiCkGz2rts-__qLXH7heJmAgG8EId9AbR1H1i78hmugG0Btfh9v4J74LrWblwGNreGhkmZqf2f2q9dTcI0_EF62hPWmvX1FnpIG0g2FJvEDg7hRunoOwH0v7rzSmABNGqmDpzrueWWEvNolJzzaMEgoV13m2r4tY1idXxGMLhZ9XMqZudvwilR9XHuEUcnTcF48qbisyREGh7kZnSlC4smZVBYDsDWGi2w7qvZghy8FGRKLUhjYab2qC_nfZtns9ZV2waVAiihcKIaQsJvVLVzMvF5mi2k",
       proxy: proxyStr,
     },
     "cloudflare_challenge"
@@ -340,26 +340,26 @@ async function main() {
 
   const results = {};
 
-  try {
-    results.recaptcha_v2 = await test1_recaptchaV2();
-  } catch (e) {
-    results.recaptcha_v2 = { ok: false, error: e.message };
-  }
-  try {
-    results.recaptcha_v2_invisible = await test2_recaptchaV2Invisible();
-  } catch (e) {
-    results.recaptcha_v2_invisible = { ok: false, error: e.message };
-  }
-  try {
-    results.recaptcha_v2_enterprise = await test3_recaptchaV2Enterprise();
-  } catch (e) {
-    results.recaptcha_v2_enterprise = { ok: false, error: e.message };
-  }
-  try {
-    results.turnstile = await test4_cloudflareTurnstile();
-  } catch (e) {
-    results.turnstile = { ok: false, error: e.message };
-  }
+  // try {
+  //   results.recaptcha_v2 = await test1_recaptchaV2();
+  // } catch (e) {
+  //   results.recaptcha_v2 = { ok: false, error: e.message };
+  // }
+  // try {
+  //   results.recaptcha_v2_invisible = await test2_recaptchaV2Invisible();
+  // } catch (e) {
+  //   results.recaptcha_v2_invisible = { ok: false, error: e.message };
+  // }
+  // try {
+  //   results.recaptcha_v2_enterprise = await test3_recaptchaV2Enterprise();
+  // } catch (e) {
+  //   results.recaptcha_v2_enterprise = { ok: false, error: e.message };
+  // }
+  // try {
+  //   results.turnstile = await test4_cloudflareTurnstile();
+  // } catch (e) {
+  //   results.turnstile = { ok: false, error: e.message };
+  // }
   try {
     results.cloudflare_challenge = await test5_cloudflareChallenge();
   } catch (e) {
