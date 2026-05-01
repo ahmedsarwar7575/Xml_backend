@@ -74,12 +74,18 @@ router.get("/stats/:campaignId", (req, res) => {
 router.get("/logs/recent", (req, res) => {
   try {
     const { limit = 50 } = req.query;
+
     const logs = db
       .prepare(
         `
-      SELECT cl.id, cl.status, cl.final_url, cl.timestamp, cl.error_message, 
-             cl.ip_address, cl.ip_country, cl.browser_type_used, screenshot_path,
-             c.name as campaign_name, fi.title as item_title
+      SELECT cl.id, cl.status, 
+             SUBSTR(cl.final_url, 1, 500) as final_url,
+             cl.timestamp, 
+             SUBSTR(cl.error_message, 1, 300) as error_message,
+             cl.ip_address, cl.ip_country, cl.browser_type_used, 
+             cl.screenshot_path,
+             c.name as campaign_name, 
+             SUBSTR(fi.title, 1, 200) as item_title
       FROM clicks cl
       LEFT JOIN campaigns c ON cl.campaign_id = c.id
       LEFT JOIN feed_items fi ON cl.feed_item_id = fi.id
@@ -88,7 +94,13 @@ router.get("/logs/recent", (req, res) => {
     `
       )
       .all(limit);
-    res.json(logs);
+
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store");
+
+    const response = JSON.stringify(logs);
+    res.setHeader("Content-Length", Buffer.byteLength(response, "utf8"));
+    res.send(response);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
