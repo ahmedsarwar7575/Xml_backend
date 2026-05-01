@@ -83,10 +83,7 @@ CREATE TABLE IF NOT EXISTS settings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   key TEXT UNIQUE NOT NULL,
   value TEXT,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  admin_username TEXT DEFAULT 'admin',
-  admin_password TEXT DEFAULT 'password',
-  timezone TEXT DEFAULT 'UTC'
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 `);
 
@@ -95,27 +92,6 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_clicks_status ON clicks(status);
   CREATE INDEX IF NOT EXISTS idx_feed_items_feed ON feed_items(feed_id);
   CREATE INDEX IF NOT EXISTS idx_campaigns_feed ON campaigns(feed_id);
-`);
-
-db.exec(`
-  INSERT OR IGNORE INTO settings (key, value) VALUES 
-    ('webshare_api_key', ''),
-    ('capsolver_key', ''),
-    ('captcha_enabled', 'false'),
-    ('headless_mode', 'true'),
-    ('admin_username', 'admin'),
-    ('admin_password', 'password'),
-    ('timezone', 'UTC'),
-    ('NovaProxyHost', ''),
-    ('NovaProxyPort', ''),
-    ('NovaProxyUsername', ''),
-    ('NovaProxyPassword', ''),
-    ('IsNovaProxy', 'false'),
-    ('KindProxyHost', ''),
-    ('KindProxyPort', ''),
-    ('KindProxyUsername', ''),
-    ('KindProxyPassword', ''),
-    ('isKindProxy', 'false');
 `);
 
 try {
@@ -127,6 +103,58 @@ db.exec("PRAGMA cache_size = -20000;");
 db.exec("PRAGMA journal_mode = WAL;");
 db.exec("PRAGMA synchronous = NORMAL;");
 
-console.log("Database initialized at", dbPath);
+// AUTO-FIX MISSING COLUMNS (prevents jobs from silently failing)
+const requiredColumns = {
+  feed_items: [
+    { name: 'is_active', type: 'INTEGER DEFAULT 1' },
+    { name: 'last_clicked_at', type: 'DATETIME' },
+  ],
+  clicks: [
+    { name: 'captcha_solved', type: 'INTEGER DEFAULT 0' },
+    { name: 'captcha_types', type: 'TEXT' },
+  ],
+};
 
+for (const [table, columns] of Object.entries(requiredColumns)) {
+  for (const col of columns) {
+    try {
+      db.prepare(`SELECT ${col.name} FROM ${table} LIMIT 1`).get();
+    } catch (err) {
+      if (err.message.includes('no such column')) {
+        console.log(`[DB] Adding missing column: ${table}.${col.name}`);
+        db.prepare(`ALTER TABLE ${table} ADD COLUMN ${col.name} ${col.type}`).run();
+        if (col.name === 'is_active') {
+          db.prepare(`UPDATE ${table} SET ${col.name} = 1 WHERE ${col.name} IS NULL`).run();
+        }
+      }
+    }
+  }
+}
+
+const defaultSettings = [
+  ['webshare_api_key', ''],
+  ['capsolver_key', ''],
+  ['captcha_enabled', 'false'],
+  ['headless_mode', 'true'],
+  ['admin_username', 'admin'],
+  ['admin_password', 'password'],
+  ['timezone', 'UTC'],
+  ['nova_enabled', 'false'],
+  ['nova_host', 'residential.novaproxy.io'],
+  ['nova_port', '12321'],
+  ['nova_user', ''],
+  ['nova_pass', ''],
+  ['kind_enabled', 'false'],
+  ['kind_host', 'gw.kindproxy.com'],
+  ['kind_port', '12000'],
+  ['kind_user', ''],
+  ['kind_pass', ''],
+];
+
+const stmt = db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)");
+for (const [key, value] of defaultSettings) {
+  stmt.run(key, value);
+}
+
+console.log("Database initialized at", dbPath);
 module.exports = db;
