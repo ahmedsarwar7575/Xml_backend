@@ -386,106 +386,93 @@ async function executeClick(
   capsolverKey,
   captchaEnabled,
   proxyConfig,
-  timeoutMs = 120000
+  timeoutMs = 90000
 ) {
   const allCaptchaTypes = [];
-  const captchaOpts = {
-    solveCaptchaIfFound: true,
-    capsolverKey,
-    captchaEnabled,
-    proxyConfig,
-  };
+  const MAX_CAPTCHA_CYCLES = 3;
+  const WAIT_FOR_REDIRECT_MS = 5000;
 
   try {
     console.log(`   Navigating to ${url}`);
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
-    await page.waitForTimeout(2000);
 
-    console.log(`   Waiting for redirects (auto-solving captchas)...`);
-    await waitForAllRedirects(page, 30000, captchaOpts);
+    let lastUrl = page.url();
 
-    const step1 = await checkAndSolveCaptcha(
-      page,
-      capsolverKey,
-      captchaEnabled,
-      proxyConfig,
-      "after-nav"
-    );
-    if (step1.solved) allCaptchaTypes.push(...step1.types);
-    await waitForAllRedirects(page, 15000, captchaOpts);
+    // Cycle: wait 5s → if URL changed continue, if not check captcha → solve → repeat
+    for (let cycle = 1; cycle <= MAX_CAPTCHA_CYCLES; cycle++) {
+      // Wait 5s for any redirect to happen
+      console.log(
+        `   [cycle ${cycle}/${MAX_CAPTCHA_CYCLES}] Waiting ${
+          WAIT_FOR_REDIRECT_MS / 1000
+        }s for redirect...`
+      );
+      await sleep(WAIT_FOR_REDIRECT_MS);
 
-    console.log("   Human scroll + mouse...");
-    try {
-      await humanMouseMove(page);
-    } catch (_) {}
-    try {
-      await smoothScroll(page);
-    } catch (_) {}
-    try {
-      await humanMouseMove(page);
-    } catch (_) {}
-
-    await waitForAllRedirects(page, 10000, captchaOpts);
-
-    const step2 = await checkAndSolveCaptcha(
-      page,
-      capsolverKey,
-      captchaEnabled,
-      proxyConfig,
-      "after-scroll"
-    );
-    if (step2.solved) {
-      allCaptchaTypes.push(...step2.types);
-      await waitForAllRedirects(page, 15000, captchaOpts);
-    }
-
-    await waitForScriptsToLoad(page, 20000);
-
-    const step3 = await checkAndSolveCaptcha(
-      page,
-      capsolverKey,
-      captchaEnabled,
-      proxyConfig,
-      "final-page"
-    );
-    if (step3.solved) {
-      allCaptchaTypes.push(...step3.types);
-      await waitForAllRedirects(page, 15000, captchaOpts);
-      await waitForScriptsToLoad(page, 10000);
-    }
-
-    console.log(
-      "   [final-verify] Verifying page is captcha-free (up to 2 attempts)..."
-    );
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      const remaining = await captchaSolver.detectChallenges(page);
-      if (remaining.length === 0) {
-        console.log(`   [final-verify] Clean ✓ (attempt ${attempt}/2)`);
+      let currentUrl;
+      try {
+        currentUrl = page.url();
+      } catch (_) {
         break;
       }
+
+      // If URL changed, page is redirecting - give it more time
+      if (currentUrl !== lastUrl) {
+        console.log(
+          `   [cycle ${cycle}] URL changed → ${currentUrl.slice(0, 80)}`
+        );
+        lastUrl = currentUrl;
+        // Wait a bit more for redirect chain to settle
+        await sleep(2000);
+        continue;
+      }
+
+      // URL didn't change - check for captcha
+      if (!captchaEnabled || !capsolverKey) {
+        console.log(
+          `   [cycle ${cycle}] Captcha disabled, no redirect - moving on`
+        );
+        break;
+      }
+
+      const challenges = await captchaSolver
+        .detectChallenges(page)
+        .catch(() => []);
+      if (!challenges.length) {
+        console.log(
+          `   [cycle ${cycle}] No captcha, no redirect - page settled`
+        );
+        break;
+      }
+
       console.log(
-        `   [final-verify] Still has captcha (attempt ${attempt}/2): ${remaining
+        `   [cycle ${cycle}] Captcha detected: ${challenges
           .map((c) => c.type)
-          .join(", ")} — solving...`
+          .join(", ")}`
       );
-      const finalSolve = await captchaSolver.solveAllCaptchas(
+      const solveResult = await captchaSolver.solveAllCaptchas(
         page,
         capsolverKey,
         captchaEnabled,
         proxyConfig
       );
-      if (finalSolve.solved) allCaptchaTypes.push(...finalSolve.types);
-      await waitForAllRedirects(page, 10000, captchaOpts);
-      await sleep(2000);
+
+      if (solveResult.solved) {
+        allCaptchaTypes.push(...solveResult.types);
+        console.log(
+          `   [cycle ${cycle}] Solved: ${solveResult.types.join(", ")}`
+        );
+      } else {
+        console.log(`   [cycle ${cycle}] Could not solve captcha - moving on`);
+        break;
+      }
     }
 
-    console.log(
-      "   [TRACKING] Waiting for networkidle + 8s for tracking pixels to fire..."
-    );
+    // Final wait for tracking pixels
+    console.log("   [TRACKING] Waiting 5s for tracking pixels...");
     await page
-      .waitForLoadState("networkidle", { timeout: 10000 })
+      .waitForLoadState("networkidle", { timeout: 8000 })
       .catch(() => {});
-    await page.waitForTimeout(8000);
+    await sleep(3000);
 
     const finalUrl = page.url();
     const userAgent = await page
@@ -495,23 +482,13 @@ async function executeClick(
 
     const cookies = await context.cookies();
     console.log(
-      `   [TRACKING] ${cookies.length} cookies set across all domains`
+      `   [TRACKING] ${cookies.length} cookies, domains: ${[
+        ...new Set(cookies.map((c) => c.domain)),
+      ]
+        .slice(0, 5)
+        .join(", ")}`
     );
-    const trackingDomains = [...new Set(cookies.map((c) => c.domain))];
-    if (trackingDomains.length > 0) {
-      console.log(
-        `   [TRACKING] Cookie domains: ${trackingDomains
-          .slice(0, 5)
-          .join(", ")}${trackingDomains.length > 5 ? "..." : ""}`
-      );
-    }
-
     console.log(`   Final URL: ${finalUrl}`);
-    if (captchaSolved) {
-      console.log(
-        `   Captchas solved: ${[...new Set(allCaptchaTypes)].join(", ")}`
-      );
-    }
 
     return {
       success: true,

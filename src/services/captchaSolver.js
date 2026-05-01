@@ -259,67 +259,110 @@ async function detectChallenges(page) {
 }
 
 async function solveCloudflareChallenge(apiKey, page, proxyConfig) {
-  await waitForChallengeStable(page, 6000);
+  await waitForChallengeStable(page, 4000);
 
   const pageUrl = page.url();
-  console.log(`   CF challenge target: ${pageUrl.slice(0, 80)}`);
-
-  const capProxy = toCapsolverProxy(proxyConfig);
-  if (!capProxy) {
-    console.log("   CF challenge requires proxy - skipping");
+  if (!pageUrl || !pageUrl.startsWith("http")) {
+    console.log(`   CF: invalid page URL (${pageUrl})`);
     return false;
   }
 
-  // Per CapSolver 2026 docs: only websiteURL + proxy needed. No html field.
+  console.log(`   CF target: ${pageUrl.slice(0, 80)}`);
+
+  const capProxy = toCapsolverProxy(proxyConfig);
+  if (!capProxy) {
+    console.log("   CF: requires proxy - skipping");
+    return false;
+  }
+
   const taskPayload = {
     type: "AntiCloudflareTask",
     websiteURL: pageUrl,
     proxy: capProxy,
   };
 
-  console.log(
-    `   CF proxy (masked): ${capProxy
-      .split(":")
-      .slice(0, 2)
-      .join(":")}:****:****`
-  );
-
   try {
-    console.log(`   CF: Sending createTask to CapSolver...`);
+    console.log(`   CF: createTask...`);
     const { taskId } = await capsolverPost(apiKey, "createTask", {
       task: taskPayload,
     });
-    console.log(`   CF taskId: ${taskId}, polling...`);
+    console.log(`   CF taskId: ${taskId.slice(0, 8)}... polling`);
 
-    const solution = await pollResult(apiKey, taskId, 60, 3000);
+    const solution = await pollResult(apiKey, taskId, 40, 3000);
+    if (!solution) throw new Error("no solution");
 
-    if (!solution || !solution.token) {
-      console.log(`   CF ERROR: CapSolver returned no token`);
-      throw new Error("CapSolver returned no token for Cloudflare challenge");
+    // CapSolver returns: solution.cookies.cf_clearance, solution.token, solution.userAgent
+    // Some versions return cookies as object {cf_clearance: "..."}, others as array [{name, value}]
+    let cfClearance = null;
+    if (solution.cookies) {
+      if (Array.isArray(solution.cookies)) {
+        // Array format
+        const cookieObj = solution.cookies.find(
+          (c) => c.name === "cf_clearance"
+        );
+        if (cookieObj) cfClearance = cookieObj.value;
+      } else if (typeof solution.cookies === "object") {
+        // Object format
+        cfClearance = solution.cookies.cf_clearance;
+      }
+    }
+    if (!cfClearance) cfClearance = solution.token;
+
+    const cfUserAgent = solution.userAgent;
+
+    if (!cfClearance) {
+      throw new Error("no cf_clearance in solution");
     }
 
-    console.log(`   CF: Got token, refreshing page...`);
+    if (!cfUserAgent) {
+      console.log(`   CF WARNING: no userAgent returned - cookie may not work`);
+    }
+
+    // Extract base domain for cookie (e.g. ".ziprecruiter.com" not "www.ziprecruiter.com")
+    const hostname = new URL(pageUrl).hostname;
+    const parts = hostname.split(".");
+    const baseDomain =
+      parts.length >= 2 ? "." + parts.slice(-2).join(".") : hostname;
+
     const context = page.context();
+
+    // Set cf_clearance with proper attributes - bound to base domain
     await context.addCookies([
       {
         name: "cf_clearance",
-        value: solution.token,
-        domain: new URL(pageUrl).hostname,
+        value: cfClearance,
+        domain: baseDomain,
         path: "/",
+        secure: true,
+        httpOnly: true,
+        sameSite: "None",
       },
     ]);
+
+    // CRITICAL: cf_clearance cookie is BOUND to the userAgent CapSolver used.
+    // Override the HTTP user-agent header to match - preserve other browser headers.
+    if (cfUserAgent) {
+      await page.setExtraHTTPHeaders({
+        "user-agent": cfUserAgent,
+        "Accept-Language": "en-US,en;q=0.9",
+        Accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+      });
+    }
+
+    console.log(`   CF: cookie set on ${baseDomain}, reloading...`);
     await page.reload({ waitUntil: "domcontentloaded", timeout: 30000 });
-    await sleep(3000);
-    console.log(`   CF: Solve complete`);
+    await sleep(2500);
+    console.log(`   CF: reload complete`);
     return true;
   } catch (err) {
-    console.log(`   CF ERROR: ${err.message}`);
-    // Log full error details if it's a CapSolver API error
-    if (err.response) {
-      console.log(
-        `   CF ERROR details: ${JSON.stringify(err.response).slice(0, 200)}`
-      );
-    }
+    console.log(`   CF FAIL: ${err.message}`);
     return false;
   }
 }
@@ -435,6 +478,20 @@ async function solveRecaptchaV2(
     !targetUrl.startsWith("http")
   ) {
     console.log(`   Skipping reCAPTCHA: invalid page URL (${targetUrl})`);
+    return false;
+  }
+
+  // Skip on redirect/intermediate URLs - CapSolver cannot solve captchas on these
+  if (
+    targetUrl.includes("/redirect") ||
+    targetUrl.includes("/click") ||
+    targetUrl.includes("/ekn/") ||
+    targetUrl.includes("/track/") ||
+    targetUrl.includes("/?rd=")
+  ) {
+    console.log(
+      `   Skipping reCAPTCHA: redirect URL (${targetUrl.slice(0, 50)}...)`
+    );
     return false;
   }
 
@@ -634,69 +691,52 @@ async function solveAllCaptchas(
 
   const allSolvedTypes = [];
   let lastError = null;
-  const MAX_ROUNDS = 2;
 
-  for (let round = 1; round <= MAX_ROUNDS; round++) {
-    let challenges = [];
+  let challenges = [];
+  try {
+    challenges = await detectChallenges(page);
+  } catch (e) {
+    return { solved: false, types: [], error: "detect error: " + e.message };
+  }
+
+  if (!challenges.length) {
+    return { solved: false, types: [], error: null };
+  }
+
+  console.log(
+    `   ${challenges.length} challenge(s): ${challenges
+      .map((c) => c.type)
+      .join(", ")}`
+  );
+
+  for (const challenge of challenges) {
     try {
-      challenges = await detectChallenges(page);
-    } catch (e) {
-      lastError = "detect error: " + e.message;
-      break;
-    }
-
-    if (!challenges.length) {
-      if (round > 1) console.log(`   Round ${round}: page clean ✓`);
-      break;
-    }
-
-    console.log(
-      `   Round ${round}: ${challenges.length} challenge(s): ${challenges
-        .map((c) => c.type)
-        .join(", ")}`
-    );
-
-    for (const challenge of challenges) {
-      let solved = false;
-      for (let attempt = 1; attempt <= 2 && !solved; attempt++) {
-        try {
-          console.log(
-            `     [attempt ${attempt}/2] Solving ${challenge.type}${
-              challenge.siteKey ? " key=" + challenge.siteKey.slice(0, 20) : ""
-            }`
-          );
-          await solveOne(challenge, capsolverKey, page, proxyConfig);
-          await sleep(3500);
-          const recheck = await detectChallenges(page).catch(() => []);
-          const stillThere = recheck.some(
-            (c) => c.type === challenge.type && c.siteKey === challenge.siteKey
-          );
-          if (!stillThere) {
-            solved = true;
-            allSolvedTypes.push(challenge.type);
-            console.log(`     ✓ ${challenge.type} cleared`);
-          } else if (attempt < 2) {
-            console.log(`     Still present, retry ${attempt + 1}/2...`);
-            await sleep(2000);
-          }
-        } catch (err) {
-          console.error(`     Error: ${err.message}`);
-          lastError = err.message;
-          if (attempt < 3) await sleep(2000);
-        }
+      console.log(
+        `     Solving ${challenge.type}${
+          challenge.siteKey ? " key=" + challenge.siteKey.slice(0, 20) : ""
+        }`
+      );
+      await solveOne(challenge, capsolverKey, page, proxyConfig);
+      await sleep(3000);
+      const recheck = await detectChallenges(page).catch(() => []);
+      const stillThere = recheck.some(
+        (c) => c.type === challenge.type && c.siteKey === challenge.siteKey
+      );
+      if (!stillThere) {
+        allSolvedTypes.push(challenge.type);
+        console.log(`     ✓ ${challenge.type} cleared`);
+      } else {
+        console.log(`     ${challenge.type} still present`);
       }
-      if (!solved) console.log(`     ${challenge.type} could not be cleared`);
+    } catch (err) {
+      console.error(`     Error: ${err.message}`);
+      lastError = err.message;
     }
-
-    await sleep(2500);
-    try {
-      await page.waitForLoadState("domcontentloaded", { timeout: 5000 });
-    } catch (_) {}
   }
 
   return {
     solved: allSolvedTypes.length > 0,
-    types: [...new Set(allSolvedTypes)],
+    types: allSolvedTypes,
     error: lastError,
   };
 }
